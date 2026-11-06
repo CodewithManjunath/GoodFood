@@ -179,6 +179,14 @@ h1 { font: 700 29px Manrope, sans-serif; letter-spacing: -1.1px; margin: 8px 0 7
 .confirm-box strong { color: #3c6344; }
 .toast { position: fixed; z-index: 20; bottom: 22px; left: 50%; transform: translate(-50%, 20px); opacity: 0; pointer-events: none; background: #263d2d; color: white; border-radius: 7px; padding: 12px 17px; font-size: 11px; box-shadow: 0 6px 22px #17291d38; transition: .2s ease; }
 .toast.visible { transform: translate(-50%,0); opacity: 1; }
+.toast.error { background: #8b332c; }
+.verification-notice { margin: 18px 0; }
+.safety-attestation { display: flex; align-items: flex-start; gap: 9px; line-height: 1.55; }
+.safety-attestation input { width: auto; margin: 1px 0 0; accent-color: #286547; }
+.activity-row .activity-text { min-width: 0; flex: 1 1 auto; }
+.activity-row .activity-text small { overflow-wrap: anywhere; }
+.activity-row > .secondary-button, .activity-row > .table-action { flex: 0 0 auto; }
+.activity-row > .table-action { border: 0; background: transparent; color: #527453; cursor: pointer; font-size: 10px; font-weight: 700; }
 
 @media (max-width: 1050px) {
   .page-wrap { padding-left: 30px; padding-right: 30px; }
@@ -225,4 +233,7 @@ h1 { font: 700 29px Manrope, sans-serif; letter-spacing: -1.1px; margin: 8px 0 7
   .form-grid { grid-template-columns: 1fr; }
   .form-field.full { grid-column: auto; }
   .auth-card { padding: 24px 20px; }
+  .activity-row { flex-wrap: wrap; }
+  .activity-row .activity-text { flex-basis: calc(100% - 45px); }
+  .activity-row .claim-button, .activity-row .secondary-button, .activity-row .table-action { margin-left: 44px; }
 }

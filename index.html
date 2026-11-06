@@ -41,6 +41,16 @@
               <option value="individual">Individual food donor</option>
             </select>
           </div>
+          <div class="form-grid hidden" id="location-fields">
+            <div class="form-field">
+              <label for="auth-country">Country</label>
+              <input id="auth-country" name="country" autocomplete="country-name" minlength="2" maxlength="80" />
+            </div>
+            <div class="form-field">
+              <label for="auth-city">City</label>
+              <input id="auth-city" name="city" autocomplete="address-level2" minlength="2" maxlength="100" />
+            </div>
+          </div>
           <div class="form-field">
             <label for="auth-email">Email address</label>
             <input id="auth-email" name="email" type="email" autocomplete="email" required maxlength="254" />
@@ -92,7 +102,7 @@
           </div>
           <button class="profile-button" id="profile-button">
             <span class="avatar">CT</span>
-            <span class="profile-meta"><strong id="profile-name">Community Table</strong><small>Verified organization</small></span>
+            <span class="profile-meta"><strong id="profile-name">Goodfood member</strong><small>Community partner</small></span>
             <span class="profile-more">···</span>
           </button>
           <button class="sign-out-button" id="sign-out">Sign out</button>
@@ -103,7 +113,7 @@
         <header class="topbar">
           <div class="breadcrumb">Community <span>/</span> <strong id="page-label">Discover food</strong></div>
           <div class="topbar-actions">
-            <span class="location-pill"><span>⌖</span> Portland, OR <span class="chevron">⌄</span></span>
+            <span class="location-pill"><span>⌖</span> Your location</span>
             <button class="icon-button notification-button" aria-label="Notifications">♧<i></i></button>
             <button class="help-button" id="help-button">Need help?</button>
           </div>

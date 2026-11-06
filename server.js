@@ -22,6 +22,10 @@ function sendJson(response, status, value) {
 }
 
 async function handleApi(request, response, pathname) {
+  if (pathname === "/healthz" && request.method === "GET") {
+    return sendJson(response, 200, { status: "ok" });
+  }
+
   if (pathname === "/api/auth/session" && request.method === "GET") {
     if (!process.env.SUPABASE_URL || !process.env.SUPABASE_PUBLISHABLE_KEY || !process.env.SUPABASE_JWKS_URL) {
       return sendJson(response, 503, { error: "Supabase server authentication is not configured." });
@@ -53,6 +57,15 @@ async function handleApi(request, response, pathname) {
 
 async function serve(request, response) {
   const url = new URL(request.url, `http://${request.headers.host || "localhost"}`);
+  if (url.pathname === "/healthz") {
+    if (request.method !== "GET") {
+      response.writeHead(405, { Allow: "GET" });
+      response.end();
+      return;
+    }
+    await handleApi(request, response, url.pathname);
+    return;
+  }
   if (url.pathname.startsWith("/api/")) {
     if (request.method !== "GET") {
       response.writeHead(405, { Allow: "GET" });
@@ -98,7 +111,7 @@ async function serve(request, response) {
   response.end(request.method === "HEAD" ? undefined : content);
 }
 
-async function startServer() {
+async function startServer(port = PORT) {
   try {
     await fs.access(path.join(DIST_DIR, "index.html"));
   } catch {
@@ -111,7 +124,10 @@ async function startServer() {
       response.end("Internal server error");
     });
   });
-  server.listen(PORT, () => console.log(`Goodfood is available at http://localhost:${PORT}`));
+  server.listen(port, () => {
+    const address = server.address();
+    console.log(`Goodfood is available at http://localhost:${address.port}`);
+  });
   return server;
 }
 

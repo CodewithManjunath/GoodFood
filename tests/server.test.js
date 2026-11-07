@@ -33,7 +33,9 @@ test("production server exposes health and static routes, and restricts API meth
   const homepage = await fetch(`${baseUrl}/`);
   assert.equal(homepage.status, 200);
   assert.match(homepage.headers.get("content-type"), /text\/html/);
-  assert.match(await homepage.text(), /Goodfood/);
+  const homepageHtml = await homepage.text();
+  assert.match(homepageHtml, /Goodfood/);
+  assert.match(homepageHtml, /id="topbar-sign-out"/);
 
   const privacyPolicy = await fetch(`${baseUrl}/privacy.html`);
   assert.equal(privacyPolicy.status, 200);
@@ -48,7 +50,14 @@ test("production server exposes health and static routes, and restricts API meth
   const legalStyles = await fetch(`${baseUrl}/legal.css`);
   assert.equal(legalStyles.status, 200);
   assert.match(legalStyles.headers.get("content-type"), /text\/css/);
-  assert.match(await legalStyles.text(), /\.legal-document/);
+  const stylesheet = await legalStyles.text();
+  assert.match(stylesheet, /\.legal-document/);
+
+  const stylesPath = homepageHtml.match(/href="([^"]+\.css)"/)?.[1];
+  assert.ok(stylesPath, "built stylesheet should be linked from the homepage");
+  const appStyles = await fetch(new URL(stylesPath, baseUrl));
+  assert.equal(appStyles.status, 200);
+  assert.match(await appStyles.text(), /prefers-reduced-motion/);
 
   const missingConfig = await fetch(`${baseUrl}/api/auth/session`);
   assert.equal(missingConfig.status, 503);

@@ -252,13 +252,13 @@ function discoverView() {
       <div class="welcome-row">
         <div><div class="eyebrow">${isDonor ? "DONOR DASHBOARD" : "YOUR LOCAL FOOD NETWORK"}</div><h1>${ownGreeting}</h1>
           <p class="subtitle">${isDonor ? "Share your surplus with a community organization nearby." : "Find fresh, local donations ready to make a difference."}</p></div>
-        ${isDonor && state.profile?.is_verified ? `<button class="primary-button" id="add-donation"><span>＋</span> Offer food</button>` : ""}
+        ${isDonor && state.profile?.is_verified ? `<button class="primary-button" id="add-donation"><span>＋</span> Donate food</button>` : ""}
       </div>
-      ${isDonor && !state.profile?.is_verified ? `<div class="confirm-box verification-notice"><strong>Account verification required.</strong> A platform administrator must verify this account before it can publish food listings.</div>` : ""}
+      ${isDonor && !state.profile?.is_verified ? `<div class="confirm-box verification-notice"><strong>Account verification required.</strong> A platform administrator must verify this account before it can publish a food donation.</div>` : ""}
       ${state.role === "ngo" && !state.profile?.is_verified ? `<div class="confirm-box verification-notice"><strong>Account verification required.</strong> You can browse listings; an administrator must verify this organization before it can request food.</div>` : ""}
       <div class="hero-card">
         <div class="hero-symbol">✳</div>
-        <div class="hero-copy"><strong>Good things happen when we share.</strong><p>Only verified local partners can publish food or request a handoff. Private pickup instructions are shared only after a donor confirms.</p></div>
+        <div class="hero-copy"><strong>Good things happen when we share.</strong><p>Verified donors can post surplus food directly—no request needed to publish. NGOs can then request a handoff. Private pickup instructions are shared only after a donor confirms.</p></div>
         <div class="hero-stat"><strong>${available.length}</strong><span>available listings</span></div>
       </div>
       <div class="section-heading"><div><h2>${isDonor ? "Community listings" : "Available near you"}</h2><p>${isDonor ? "See what other neighbors are sharing." : "Current food offers from verified donors"}</p></div><span class="result-count">${filtered.length} available</span></div>
@@ -329,7 +329,7 @@ function activityView() {
       subtitle: `Requested by ${claim.recipient} · ${claim.pickup}`,
       isRequest: true
     })), ...donations];
-  root.innerHTML = `<div class="page-wrap"><div class="welcome-row"><div><div class="eyebrow">YOUR GOODFOOD</div><h1>My activity</h1><p class="subtitle">Keep track of your donations and pickup requests.</p></div>${["donor", "individual"].includes(state.role) && state.profile?.is_verified ? `<button class="primary-button" id="add-donation"><span>＋</span> Offer food</button>` : ""}</div>
+  root.innerHTML = `<div class="page-wrap"><div class="welcome-row"><div><div class="eyebrow">YOUR GOODFOOD</div><h1>My activity</h1><p class="subtitle">Keep track of your donations and pickup requests.</p></div>${["donor", "individual"].includes(state.role) && state.profile?.is_verified ? `<button class="primary-button" id="add-donation"><span>＋</span> Donate food</button>` : ""}</div>
     <div class="activity-list">${items.length ? items.map((item) => `<div class="activity-row"><span class="activity-icon">${escapeHtml(item.icon)}</span><span class="activity-text"><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(item.subtitle)}${item.note ? `<br>Note: ${escapeHtml(item.note)}` : ""}${item.status === "Confirmed" && item.pickupInstructions ? `<br><strong>Private pickup instructions:</strong> ${escapeHtml(item.pickupInstructions)}` : ""}</small></span>${item.isDonation && item.status === "Available" ? `<button class="table-action" data-withdraw-donation="${escapeHtml(item.id)}">Withdraw</button>` : item.isRequest && item.status === "Requested" && state.role !== "ngo" ? `<button class="claim-button" data-confirm-request="${escapeHtml(item.id)}">Review request</button><button class="secondary-button" data-decline-request="${escapeHtml(item.id)}">Decline</button>` : item.isRequest && item.status === "Confirmed" && state.role === "ngo" ? `<button class="claim-button" data-complete-request="${escapeHtml(item.id)}">Mark collected</button>` : `<span class="status-pill">${escapeHtml(item.status)}</span>`}</div>`).join("") : `<div class="empty-state"><span>▤</span><strong>Nothing here just yet</strong><p>Your requests and donations will show up here.</p></div>`}</div></div>`;
   document.getElementById("add-donation")?.addEventListener("click", openDonationForm);
   root.querySelectorAll("[data-confirm-request]").forEach((button) => {
@@ -820,7 +820,7 @@ document.getElementById("google-sign-in").addEventListener("click", async () => 
   }
 });
 
-document.getElementById("sign-out").addEventListener("click", async () => {
+async function signOut() {
   if (!supabase) return;
   const { error } = await supabase.auth.signOut();
   if (error) {
@@ -828,7 +828,9 @@ document.getElementById("sign-out").addEventListener("click", async () => {
     return;
   }
   showSignedOut();
-});
+}
+
+document.getElementById("topbar-sign-out").addEventListener("click", signOut);
 
 if (supabase) {
   supabase.auth.onAuthStateChange((event, session) => {

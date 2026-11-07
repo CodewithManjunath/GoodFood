@@ -26,6 +26,10 @@ The existing Node.js server serves the production Vite build and exposes `/healt
 
 Choose a paid, always-on Render instance and a Supabase plan appropriate for the expected activity before accepting time-sensitive real pickup requests. Free hosting/database tiers can sleep, pause, or have service limits; they are suitable for a preview, not dependable food handoffs. A host-provided URL can be used initially; a custom domain can be connected later.
 
+## Privacy and terms
+
+The public [Privacy Notice](https://goodfood-font.onrender.com/privacy.html) and [Terms of Service](https://goodfood-font.onrender.com/terms.html) describe the current app behavior and can be linked from the Google OAuth consent screen. They are operational drafts, not legal advice. The platform operator must review them for the actual operating entity, support contact, applicable jurisdictions, retention schedule, incident process, and regulatory requirements before public launch. Update both the site and Google Auth Platform consent-screen links whenever the policies change.
+
 ## Roles and verification
 
 - Signup supports NGOs/recipients, food businesses, and individual donors. Each has a separate Supabase Auth account.

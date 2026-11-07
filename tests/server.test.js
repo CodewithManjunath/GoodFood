@@ -35,6 +35,21 @@ test("production server exposes health and static routes, and restricts API meth
   assert.match(homepage.headers.get("content-type"), /text\/html/);
   assert.match(await homepage.text(), /Goodfood/);
 
+  const privacyPolicy = await fetch(`${baseUrl}/privacy.html`);
+  assert.equal(privacyPolicy.status, 200);
+  assert.match(privacyPolicy.headers.get("content-type"), /text\/html/);
+  assert.match(await privacyPolicy.text(), /GoodFood Privacy Notice/);
+
+  const terms = await fetch(`${baseUrl}/terms.html`);
+  assert.equal(terms.status, 200);
+  assert.match(terms.headers.get("content-type"), /text\/html/);
+  assert.match(await terms.text(), /GoodFood Terms of Service/);
+
+  const legalStyles = await fetch(`${baseUrl}/legal.css`);
+  assert.equal(legalStyles.status, 200);
+  assert.match(legalStyles.headers.get("content-type"), /text\/css/);
+  assert.match(await legalStyles.text(), /\.legal-document/);
+
   const missingConfig = await fetch(`${baseUrl}/api/auth/session`);
   assert.equal(missingConfig.status, 503);
   assert.match((await missingConfig.json()).error, /not configured/i);

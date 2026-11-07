@@ -4,7 +4,13 @@ const test = require("node:test");
 const { startServer } = require("../server.js");
 
 test("production server exposes health and static routes, and restricts API methods", async (t) => {
-  const configNames = ["SUPABASE_URL", "SUPABASE_PUBLISHABLE_KEY", "SUPABASE_JWKS_URL"];
+  const configNames = [
+    "SUPABASE_URL",
+    "SUPABASE_PUBLISHABLE_KEY",
+    "SUPABASE_JWKS_URL",
+    "SUPABASE_SERVICE_ROLE_KEY",
+    "GOODFOOD_MANUAL_PAYMENT_INSTRUCTIONS"
+  ];
   const savedConfig = new Map(configNames.map((name) => [name, process.env[name]]));
   configNames.forEach((name) => delete process.env[name]);
 
@@ -62,6 +68,48 @@ test("production server exposes health and static routes, and restricts API meth
   const missingConfig = await fetch(`${baseUrl}/api/auth/session`);
   assert.equal(missingConfig.status, 503);
   assert.match((await missingConfig.json()).error, /not configured/i);
+
+  const manualConfig = await fetch(`${baseUrl}/api/contributions/manual/config`);
+  assert.equal(manualConfig.status, 200);
+  assert.deepEqual(await manualConfig.json(), { enabled: false, instructions: "" });
+
+  const manualConfigPost = await fetch(`${baseUrl}/api/contributions/manual/config`, { method: "POST" });
+  assert.equal(manualConfigPost.status, 405);
+
+  process.env.SUPABASE_URL = "https://example.supabase.co";
+  process.env.SUPABASE_PUBLISHABLE_KEY = "test-publishable-key";
+  process.env.SUPABASE_JWKS_URL = "https://example.supabase.co/auth/v1/.well-known/jwks.json";
+  process.env.SUPABASE_SERVICE_ROLE_KEY = "test-service-role-key";
+  process.env.GOODFOOD_MANUAL_PAYMENT_INSTRUCTIONS = "Official test UPI ID: test@example";
+  const configuredManual = await fetch(`${baseUrl}/api/contributions/manual/config`);
+  assert.equal(configuredManual.status, 200);
+  assert.deepEqual(await configuredManual.json(), {
+    enabled: true,
+    instructions: "Official test UPI ID: test@example"
+  });
+
+  const submitMethod = await fetch(`${baseUrl}/api/contributions/manual/submit`);
+  assert.equal(submitMethod.status, 405);
+  const reviewMethod = await fetch(`${baseUrl}/api/contributions/manual/review`);
+  assert.equal(reviewMethod.status, 405);
+  const unauthenticatedSubmission = await fetch(`${baseUrl}/api/contributions/manual/submit`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ amount: "10.00", donorReference: "TEST123" })
+  });
+  assert.equal(unauthenticatedSubmission.status, 401);
+  const unauthenticatedReview = await fetch(`${baseUrl}/api/contributions/manual/review`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      id: "00000000-0000-4000-8000-000000000001",
+      status: "paid",
+      verifiedReference: "TEST123",
+      verifiedAmount: "10.00",
+      reviewNote: "Matched to statement."
+    })
+  });
+  assert.equal(unauthenticatedReview.status, 401);
 
   const missingRoute = await fetch(`${baseUrl}/api/not-a-route`);
   assert.equal(missingRoute.status, 404);

@@ -16,6 +16,12 @@ const roles = {
 const state = {
   donations: [],
   claims: [],
+  needs: [],
+  foodNeedsAvailable: false,
+  moneyDonations: [],
+  manualContributionsEnabled: false,
+  manualPaymentInstructions: "",
+  manualContributionError: "",
   members: [],
   stats: null,
   user: null,
@@ -33,6 +39,7 @@ const state = {
 const root = document.getElementById("view-root");
 const pageTitles = {
   discover: "Discover food",
+  "food-needs": "Food needs",
   "my-activity": "My activity",
   impact: "Community impact",
   admin: "Admin console"
@@ -99,7 +106,7 @@ function updateShell() {
     : state.role === "admin"
       ? state.claims.length
       : state.claims.filter((claim) => claim.donorId === state.user?.id).length;
-  document.getElementById("activity-count").textContent = String(activityCount);
+  document.getElementById("activity-count").textContent = String(activityCount + state.moneyDonations.length);
   document.getElementById("page-label").textContent = pageTitles[state.view] || "Discover food";
   document.querySelectorAll(".nav-item").forEach((item) => {
     item.classList.toggle("active", item.dataset.view === state.view);
@@ -131,6 +138,7 @@ function donationFromRow(row) {
   return {
     id: row.id,
     donorId: row.donor_id,
+    needId: row.need_id || null,
     title: row.title,
     donor: donor.display_name || "Community donor",
     category: row.category,
@@ -170,22 +178,106 @@ function claimFromRow(row) {
   };
 }
 
+function needFromRow(row) {
+  const ngo = row.ngo || {};
+  return {
+    id: row.id,
+    ngoId: row.ngo_id,
+    title: row.title,
+    category: row.category,
+    quantity: row.quantity,
+    description: row.description,
+    neededBy: row.needed_by,
+    status: row.status,
+    createdAt: row.created_at,
+    ngoName: ngo.display_name || "Community organization",
+    city: ngo.city || "",
+    country: ngo.country || ""
+  };
+}
+
+function moneyDonationFromRow(row) {
+  const statuses = {
+    submitted: "Awaiting review",
+    paid: "Paid — manually verified",
+    rejected: "Rejected"
+  };
+  return {
+    id: row.id,
+    orderId: row.order_id,
+    amountPaise: Number(row.amount_paise),
+    verifiedAmountPaise: row.verified_amount_paise == null ? null : Number(row.verified_amount_paise),
+    createdAt: row.created_at,
+    donorReference: row.donor_reference,
+    verifiedReference: row.verified_reference,
+    reviewNote: row.review_note,
+    reviewedAt: row.reviewed_at,
+    donorName: row.donor?.display_name || null,
+    status: statuses[row.status] || "Unknown",
+    rawStatus: row.status
+  };
+}
+
+function formatRupees(amountPaise) {
+  return new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR" })
+    .format(amountPaise / 100);
+}
+
 async function loadWorkspaceData() {
-  const [donationsResult, claimsResult, statsResult] = await Promise.all([
-    supabase.from("donations")
-      .select("id,donor_id,title,category,quantity,description,pickup_starts_at,pickup_ends_at,status,donor:profiles!donations_donor_id_fkey(display_name,city,country,timezone)")
-      .order("created_at", { ascending: false }),
+  try {
+    const configResponse = await fetch("/api/contributions/manual/config");
+    if (!configResponse.ok) throw new Error("Manual contribution availability could not be checked.");
+    const config = await configResponse.json();
+    state.manualContributionsEnabled = config.enabled === true;
+    state.manualPaymentInstructions = state.manualContributionsEnabled ? String(config.instructions || "") : "";
+    state.manualContributionError = "";
+  } catch (error) {
+    console.error("Could not load manual contribution instructions.", error);
+    state.manualContributionsEnabled = false;
+    state.manualPaymentInstructions = "";
+    state.manualContributionError = "Manual contributions are temporarily unavailable.";
+  }
+
+  const [donationsResult, claimsResult, statsResult, needsResult] = await Promise.all([
+    loadDonationRows(),
     supabase.from("claims")
       .select("id,donation_id,donor_id,ngo_id,note,pickup_instructions,status,created_at,recipient:profiles!claims_ngo_id_fkey(display_name),donation:donations!claims_donation_id_fkey(title,quantity,pickup_starts_at,pickup_ends_at,donor:profiles!donations_donor_id_fkey(display_name,timezone))")
       .order("created_at", { ascending: false }),
-    supabase.rpc("goodfood_impact_summary")
+    supabase.rpc("goodfood_impact_summary"),
+    supabase.from("food_needs")
+      .select("id,ngo_id,title,category,quantity,description,needed_by,status,created_at,ngo:profiles!food_needs_ngo_id_fkey(display_name,city,country)")
+      .order("needed_by", { ascending: true })
   ]);
   if (donationsResult.error) throw donationsResult.error;
   if (claimsResult.error) throw claimsResult.error;
   if (statsResult.error) throw statsResult.error;
+  if (needsResult.error && !["42P01", "PGRST205"].includes(needsResult.error.code)) throw needsResult.error;
+  if (needsResult.error) {
+    console.error("The NGO food-needs migration is not available.", needsResult.error);
+  }
   state.donations = donationsResult.data.map(donationFromRow);
   state.claims = claimsResult.data.map(claimFromRow);
+  state.needs = needsResult.data?.map(needFromRow) || [];
+  state.foodNeedsAvailable = donationsResult.hasNeedId && !needsResult.error;
   state.stats = statsResult.data?.[0] || null;
+
+  state.moneyDonations = [];
+  const moneyDonationsResult = await supabase.from("money_donations")
+    .select(state.role === "admin"
+      ? "id,order_id,amount_paise,status,donor_reference,verified_reference,verified_amount_paise,review_note,reviewed_at,created_at,donor:profiles!money_donations_donor_id_fkey(display_name)"
+      : "id,order_id,amount_paise,status,donor_reference,verified_reference,verified_amount_paise,review_note,reviewed_at,created_at")
+    .order("created_at", { ascending: false });
+  if (moneyDonationsResult.error) {
+    if (["42P01", "PGRST205"].includes(moneyDonationsResult.error.code)) {
+      console.error("The money donations migration is not available.", moneyDonationsResult.error);
+      state.manualContributionsEnabled = false;
+      state.manualContributionError = "Manual contributions are unavailable until the contribution database migration is applied.";
+    } else {
+      throw moneyDonationsResult.error;
+    }
+  } else {
+    state.moneyDonations = moneyDonationsResult.data.map(moneyDonationFromRow);
+  }
 
   if (state.role === "admin") {
     const membersResult = await supabase.from("profiles")
@@ -195,6 +287,112 @@ async function loadWorkspaceData() {
     if (membersResult.error) throw membersResult.error;
     state.members = membersResult.data;
   }
+}
+
+async function loadDonationRows() {
+  const donationSelect = "id,donor_id,need_id,title,category,quantity,description,pickup_starts_at,pickup_ends_at,status,donor:profiles!donations_donor_id_fkey(display_name,city,country,timezone)";
+  const result = await supabase.from("donations").select(donationSelect).order("created_at", { ascending: false });
+  if (!result.error) return { ...result, hasNeedId: true };
+  if (!["42703", "PGRST204"].includes(result.error.code)) return { ...result, hasNeedId: false };
+
+  console.error("The NGO food-needs migration is not available; loading standard food listings only.", result.error);
+  const fallback = await supabase.from("donations")
+    .select("id,donor_id,title,category,quantity,description,pickup_starts_at,pickup_ends_at,status,donor:profiles!donations_donor_id_fkey(display_name,city,country,timezone)")
+    .order("created_at", { ascending: false });
+  return { ...fallback, hasNeedId: false };
+}
+
+async function postAuthenticatedJson(path, payload) {
+  const { data, error } = await supabase.auth.getSession();
+  if (error) throw error;
+  const accessToken = data.session?.access_token;
+  if (!accessToken) throw new Error("Your session has expired. Sign in again to continue.");
+
+  const response = await fetch(path, {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${accessToken}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(payload)
+  });
+  const result = await response.json();
+  if (!response.ok) throw new Error(result.error || "The payment request could not be completed.");
+  return result;
+}
+
+async function submitManualContribution(event) {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const submit = form.querySelector('[type="submit"]');
+  const formData = new FormData(form);
+  submit.disabled = true;
+  try {
+    await postAuthenticatedJson("/api/contributions/manual/submit", {
+      amount: String(formData.get("amount")),
+      donorReference: String(formData.get("donorReference"))
+    });
+    await loadWorkspaceData();
+    render();
+    setToast("Transfer submitted for manual review. It will show as paid only after an administrator checks the bank statement.");
+  } catch (error) {
+    console.error("Could not submit manual contribution.", error);
+    setToast(error.message || "Could not submit the transfer for review.", true);
+  } finally {
+    submit.disabled = false;
+  }
+}
+
+async function reviewManualContribution(id, status) {
+  try {
+    const form = document.getElementById("manual-review-form");
+    const formData = new FormData(form);
+    await postAuthenticatedJson("/api/contributions/manual/review", {
+      id,
+      status,
+      verifiedReference: String(formData.get("verifiedReference") || ""),
+      verifiedAmount: String(formData.get("verifiedAmount") || ""),
+      reviewNote: String(formData.get("reviewNote") || "")
+    });
+    closeModal();
+    await loadWorkspaceData();
+    render();
+    setToast(status === "paid" ? "Contribution marked paid after manual bank-statement review." : "Contribution marked rejected.");
+    return true;
+  } catch (error) {
+    console.error("Could not save manual contribution review.", error);
+    setToast(error.message || "Could not save the contribution review.", true);
+    return false;
+  }
+}
+
+function openManualContributionReview(id) {
+  const contribution = state.moneyDonations.find((item) => item.id === id);
+  if (!contribution || contribution.rawStatus !== "submitted" || state.role !== "admin") return;
+  showModal(`<div class="eyebrow">MANUAL BANK REVIEW</div><h2 id="modal-title">Review contribution</h2>
+    <p class="modal-intro">Compare the donor’s amount and transfer reference with the official bank statement outside GoodFood. A submitted reference is not proof of payment.</p>
+    <div class="confirm-box"><strong>${escapeHtml(formatRupees(contribution.amountPaise))}</strong><br>Donor reference: ${escapeHtml(contribution.donorReference)}<br>Submission: ${escapeHtml(new Date(contribution.createdAt).toLocaleString())}</div>
+    <form id="manual-review-form"><div class="form-field"><label for="verified-reference">Reference from bank statement (required to mark paid)</label><input id="verified-reference" name="verifiedReference" maxlength="120" value="${escapeHtml(contribution.donorReference)}" /></div>
+      <div class="form-field"><label for="verified-amount">Amount shown in bank statement (INR)</label><input id="verified-amount" name="verifiedAmount" type="number" min="1.00" max="999999999.99" step="0.01" inputmode="decimal" /></div>
+      <div class="form-field"><label for="review-note">Review note (required)</label><textarea id="review-note" name="reviewNote" required minlength="5" maxlength="1000" placeholder="Record what statement entry you checked, without adding sensitive account details."></textarea></div>
+      <div class="modal-actions"><button type="button" class="secondary-button" id="cancel-modal">Cancel</button><button type="button" class="secondary-button" id="reject-contribution">Reject</button><button type="submit" class="primary-button">Mark paid</button></div></form>`);
+  document.getElementById("cancel-modal").addEventListener("click", closeModal);
+  document.getElementById("reject-contribution").addEventListener("click", async (event) => {
+    const form = document.getElementById("manual-review-form");
+    if (!form.reportValidity()) return;
+    const button = event.currentTarget;
+    button.disabled = true;
+    if (!await reviewManualContribution(id, "rejected")) button.disabled = false;
+  });
+  document.getElementById("manual-review-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    document.getElementById("verified-reference").required = true;
+    document.getElementById("verified-amount").required = true;
+    if (!event.currentTarget.reportValidity()) return;
+    const button = event.currentTarget.querySelector('[type="submit"]');
+    button.disabled = true;
+    if (!await reviewManualContribution(id, "paid")) button.disabled = false;
+  });
 }
 
 function showLoadError(error) {
@@ -239,7 +437,7 @@ function donationCard(item) {
 function discoverView() {
   const isDonor = state.role === "donor" || state.role === "individual";
   const available = state.donations.filter((item) =>
-    item.status === "Available" && new Date(item.pickupEndsAt).getTime() > Date.now()
+    !item.needId && item.status === "Available" && new Date(item.pickupEndsAt).getTime() > Date.now()
   );
   const filtered = available.filter((item) => {
     const text = `${item.title} ${item.donor} ${item.category} ${item.description} ${item.city}`.toLowerCase();
@@ -305,6 +503,120 @@ function discoverView() {
   });
 }
 
+function foodNeedsView() {
+  const isNGO = state.role === "ngo";
+  const isDonor = ["donor", "individual"].includes(state.role);
+  const now = Date.now();
+  const needs = state.needs.filter((need) =>
+    need.ngoId === state.user.id || (need.status === "open" && new Date(need.neededBy).getTime() > now)
+  );
+  const cards = needs.map((need) => {
+    const ownNeed = isNGO && need.ngoId === state.user.id;
+    const offers = ownNeed
+      ? state.donations.filter((donation) => donation.needId === need.id)
+      : [];
+    const status = need.status === "open" && new Date(need.neededBy).getTime() <= now
+      ? "Expired"
+      : statusLabel(need.status);
+    return `<article class="need-card">
+      <div class="need-card-header"><span class="food-tag">${escapeHtml(need.category)}</span><span class="status-pill">${escapeHtml(status)}</span></div>
+      <h2>${escapeHtml(need.title)}</h2>
+      <p class="need-org">${escapeHtml(need.ngoName)} · ${escapeHtml(need.city || need.country || "Community")}</p>
+      <div class="card-meta"><span>▣ Needs ${escapeHtml(need.quantity)}</span><span>◷ By ${escapeHtml(new Date(need.neededBy).toLocaleString())}</span></div>
+      <p class="need-description">${escapeHtml(need.description)}</p>
+      ${ownNeed ? `<div class="need-offers"><strong>Food offers (${offers.length})</strong>${offers.length ? offers.map((offer) => `<div class="need-offer-row"><span><strong>${escapeHtml(offer.title)}</strong><small>${escapeHtml(offer.quantity)} · ${escapeHtml(offer.donor)} · ${escapeHtml(offer.status)}</small></span>${state.foodNeedsAvailable && need.status === "open" && offer.status === "Available" ? `<button class="claim-button" data-need-claim="${escapeHtml(offer.id)}">Request pickup</button>` : ""}</div>`).join("") : `<p class="need-empty">No donors have offered food yet.</p>`}</div>
+        ${need.status === "open" ? `<button class="secondary-button close-need-button" data-close-need="${escapeHtml(need.id)}">Close request</button>` : ""}`
+        : isDonor && state.foodNeedsAvailable && state.profile?.is_verified && need.status === "open"
+          ? `<button class="primary-button need-offer-button" data-need-offer="${escapeHtml(need.id)}">Offer food for this need</button>`
+          : ""}
+    </article>`;
+  });
+
+  root.innerHTML = `<div class="page-wrap">
+    <div class="welcome-row"><div><div class="eyebrow">${isNGO ? "COMMUNITY FOOD REQUESTS" : "HELP FILL A COMMUNITY NEED"}</div><h1>Food needs</h1><p class="subtitle">${isNGO ? "Post what your organization needs and review offers from verified donors." : "Verified food donors can respond directly to an organization's current need."}</p></div>
+      ${isNGO && state.profile?.is_verified && state.foodNeedsAvailable ? `<button class="primary-button" id="post-food-need"><span>＋</span> Post a food need</button>` : ""}
+    </div>
+    ${!state.foodNeedsAvailable ? `<div class="confirm-box verification-notice"><strong>Food-needs board not set up yet.</strong> The platform administrator must apply the NGO food-needs database migration before this feature can be used. Existing food listings remain available.</div>` : ""}
+    ${isNGO && !state.profile?.is_verified ? `<div class="confirm-box verification-notice"><strong>Account verification required.</strong> An administrator must verify your organization before it can post a food need.</div>` : ""}
+    ${isDonor && !state.profile?.is_verified ? `<div class="confirm-box verification-notice"><strong>Account verification required.</strong> An administrator must verify your donor account before it can offer food.</div>` : ""}
+    <div class="hero-card"><div class="hero-symbol">✳</div><div class="hero-copy"><strong>Requests connect need with supply.</strong><p>Food offered for a request is shared only with that organization. The NGO reviews an offer and requests pickup; the donor still confirms the handoff.</p></div></div>
+    <div class="need-grid">${cards.length ? cards.join("") : `<div class="empty-state"><span>＋</span><strong>${isNGO ? "No food needs posted yet" : "No open food needs right now"}</strong><p>${isNGO ? "Post a clear request so verified donors can respond." : "Check back soon for requests from local organizations."}</p></div>`}</div>
+  </div>`;
+
+  document.getElementById("post-food-need")?.addEventListener("click", openFoodNeedForm);
+  root.querySelectorAll("[data-need-offer]").forEach((button) => {
+    button.addEventListener("click", () => openDonationForm(button.dataset.needOffer));
+  });
+  root.querySelectorAll("[data-need-claim]").forEach((button) => {
+    button.addEventListener("click", () => openClaim(button.dataset.needClaim));
+  });
+  root.querySelectorAll("[data-close-need]").forEach((button) => {
+    button.addEventListener("click", () => closeFoodNeed(button.dataset.closeNeed));
+  });
+}
+
+function openFoodNeedForm() {
+  if (state.role !== "ngo" || !state.profile?.is_verified) {
+    setToast("A verified NGO account is required to post a food need.", true);
+    return;
+  }
+  const now = new Date();
+  const min = new Date(now.getTime() + 60 * 60 * 1000);
+  const max = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+  showModal(`<div class="eyebrow">REQUEST FOOD</div><h2 id="modal-title">Post an organization need</h2><p class="modal-intro">Verified food donors can view this request and offer food. Keep addresses and personal contact details private.</p>
+    <form id="food-need-form"><div class="form-grid">
+      <div class="form-field full"><label for="need-title">What food does your organization need? *</label><input id="need-title" name="title" required minlength="3" maxlength="70" placeholder="e.g. Fresh vegetables for family meal kits" /></div>
+      <div class="form-field"><label for="need-category">Category *</label><select id="need-category" name="category">${categories.map((category) => `<option>${escapeHtml(category)}</option>`).join("")}</select></div>
+      <div class="form-field"><label for="need-quantity">Quantity needed *</label><input id="need-quantity" name="quantity" required maxlength="35" placeholder="e.g. 20 meal portions" /></div>
+      <div class="form-field full"><label for="need-by">Needed by *</label><input id="need-by" name="neededBy" type="datetime-local" required min="${getLocalDateTimeValue(min)}" max="${getLocalDateTimeValue(max)}" value="${getLocalDateTimeValue(min)}" /></div>
+      <div class="form-field full"><label for="need-description">Details and constraints *</label><textarea id="need-description" name="description" required maxlength="300" placeholder="Share relevant dietary, storage, or collection needs. Do not include private contact details."></textarea></div>
+    </div><div class="modal-actions"><button type="button" class="secondary-button" id="cancel-modal">Cancel</button><button type="submit" class="primary-button">Post food need</button></div></form>`);
+  document.getElementById("cancel-modal").addEventListener("click", closeModal);
+  document.getElementById("food-need-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const submit = form.querySelector('[type="submit"]');
+    submit.disabled = true;
+    const data = new FormData(form);
+    const neededBy = new Date(String(data.get("neededBy")));
+    if (!Number.isFinite(neededBy.getTime()) || neededBy <= new Date() || neededBy > new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)) {
+      submit.disabled = false;
+      setToast("Choose a need-by date within the next 30 days.", true);
+      return;
+    }
+    try {
+      const { error } = await supabase.rpc("create_goodfood_need", {
+        need_title: String(data.get("title")).trim(),
+        need_category: String(data.get("category")),
+        need_quantity: String(data.get("quantity")).trim(),
+        need_description: String(data.get("description")).trim(),
+        need_by: neededBy.toISOString()
+      });
+      if (error) throw error;
+      closeModal();
+      await loadWorkspaceData();
+      render();
+      setToast("Your food need is now visible to verified donors.");
+    } catch (error) {
+      submit.disabled = false;
+      setToast(error.message || "The food need could not be posted.", true);
+    }
+  });
+}
+
+function closeFoodNeed(id) {
+  openConfirm(
+    "Close this food request?",
+    "Donors will no longer be able to offer food for this need. Resolve active pickup requests first.",
+    "Close request",
+    async () => {
+      const { error } = await supabase.rpc("close_goodfood_need", { target_need_id: id });
+      if (error) throw error;
+      setToast("The food request was closed.");
+    }
+  );
+}
+
 function activityView() {
   const claims = state.role === "ngo"
     ? state.claims.filter((claim) => claim.ngoId === state.user.id)
@@ -321,16 +633,26 @@ function activityView() {
       status: item.status,
       isDonation: true
     }));
+  const moneyDonations = state.moneyDonations.map((item) => ({
+    id: item.id,
+    orderId: item.orderId,
+    icon: "₹",
+    title: formatRupees(item.amountPaise),
+    subtitle: `Contribution to GoodFood operations · Reference ${item.donorReference} · ${new Date(item.createdAt).toLocaleString()}`,
+    note: item.reviewNote,
+    status: item.status,
+    isMoneyDonation: true
+  }));
   const items = state.role === "ngo"
-    ? claims.map((claim) => ({ ...claim, icon: "🥬", subtitle: `Offered by ${claim.donor} · ${claim.pickup}`, isRequest: true }))
+    ? [...claims.map((claim) => ({ ...claim, icon: "🥬", subtitle: `Offered by ${claim.donor} · ${claim.pickup}`, isRequest: true })), ...moneyDonations]
     : [...claims.map((claim) => ({
       ...claim,
       icon: "↗",
       subtitle: `Requested by ${claim.recipient} · ${claim.pickup}`,
       isRequest: true
-    })), ...donations];
+    })), ...donations, ...moneyDonations];
   root.innerHTML = `<div class="page-wrap"><div class="welcome-row"><div><div class="eyebrow">YOUR GOODFOOD</div><h1>My activity</h1><p class="subtitle">Keep track of your donations and pickup requests.</p></div>${["donor", "individual"].includes(state.role) && state.profile?.is_verified ? `<button class="primary-button" id="add-donation"><span>＋</span> Donate food</button>` : ""}</div>
-    <div class="activity-list">${items.length ? items.map((item) => `<div class="activity-row"><span class="activity-icon">${escapeHtml(item.icon)}</span><span class="activity-text"><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(item.subtitle)}${item.note ? `<br>Note: ${escapeHtml(item.note)}` : ""}${item.status === "Confirmed" && item.pickupInstructions ? `<br><strong>Private pickup instructions:</strong> ${escapeHtml(item.pickupInstructions)}` : ""}</small></span>${item.isDonation && item.status === "Available" ? `<button class="table-action" data-withdraw-donation="${escapeHtml(item.id)}">Withdraw</button>` : item.isRequest && item.status === "Requested" && state.role !== "ngo" ? `<button class="claim-button" data-confirm-request="${escapeHtml(item.id)}">Review request</button><button class="secondary-button" data-decline-request="${escapeHtml(item.id)}">Decline</button>` : item.isRequest && item.status === "Confirmed" && state.role === "ngo" ? `<button class="claim-button" data-complete-request="${escapeHtml(item.id)}">Mark collected</button>` : `<span class="status-pill">${escapeHtml(item.status)}</span>`}</div>`).join("") : `<div class="empty-state"><span>▤</span><strong>Nothing here just yet</strong><p>Your requests and donations will show up here.</p></div>`}</div></div>`;
+    <div class="activity-list">${items.length ? items.map((item) => `<div class="activity-row"><span class="activity-icon">${escapeHtml(item.icon)}</span><span class="activity-text"><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(item.subtitle)}${item.note ? `<br>Note: ${escapeHtml(item.note)}` : ""}${item.status === "Confirmed" && item.pickupInstructions ? `<br><strong>Private pickup instructions:</strong> ${escapeHtml(item.pickupInstructions)}` : ""}</small></span>${item.isMoneyDonation && item.status === "Awaiting review" && state.role === "admin" ? `<button class="table-action" data-review-contribution="${escapeHtml(item.id)}">Review</button>` : item.isDonation && item.status === "Available" ? `<button class="table-action" data-withdraw-donation="${escapeHtml(item.id)}">Withdraw</button>` : item.isRequest && item.status === "Requested" && state.role !== "ngo" ? `<button class="claim-button" data-confirm-request="${escapeHtml(item.id)}">Review request</button><button class="secondary-button" data-decline-request="${escapeHtml(item.id)}">Decline</button>` : item.isRequest && item.status === "Confirmed" && state.role === "ngo" ? `<button class="claim-button" data-complete-request="${escapeHtml(item.id)}">Mark collected</button>` : `<span class="status-pill">${escapeHtml(item.status)}</span>`}</div>`).join("") : `<div class="empty-state"><span>▤</span><strong>Nothing here just yet</strong><p>Your requests and donations will show up here.</p></div>`}</div></div>`;
   document.getElementById("add-donation")?.addEventListener("click", openDonationForm);
   root.querySelectorAll("[data-confirm-request]").forEach((button) => {
     button.addEventListener("click", () => confirmRequest(button.dataset.confirmRequest));
@@ -344,13 +666,21 @@ function activityView() {
   root.querySelectorAll("[data-withdraw-donation]").forEach((button) => {
     button.addEventListener("click", () => withdrawDonation(button.dataset.withdrawDonation));
   });
+  root.querySelectorAll("[data-review-contribution]").forEach((button) => {
+    button.addEventListener("click", () => openManualContributionReview(button.dataset.reviewContribution));
+  });
 }
 
 function impactView() {
   const stats = state.stats || { total_donations: 0, collected_pickups: 0, available_donations: 0 };
   root.innerHTML = `<div class="page-wrap"><div class="eyebrow">LOCAL GOOD, ADDED UP</div><h1>Community impact</h1><p class="subtitle">Live totals from confirmed activity on Goodfood.</p>
     <div class="stats-grid"><div class="stat-card"><span>Total listings</span><strong>${Number(stats.total_donations)}</strong><small>Listings not withdrawn</small></div><div class="stat-card"><span>Pickups completed</span><strong>${Number(stats.collected_pickups)}</strong><small>Confirmed handoffs</small></div><div class="stat-card"><span>Available now</span><strong>${Number(stats.available_donations)}</strong><small>Current listings with open pickup windows</small></div></div>
-    <div class="hero-card"><div class="hero-symbol">✳</div><div class="hero-copy"><strong>Small acts make a real difference.</strong><p>Impact numbers count listings and pickups; food quantities and environmental effects are not independently verified.</p></div></div></div>`;
+    <div class="hero-card"><div class="hero-symbol">✳</div><div class="hero-copy"><strong>Small acts make a real difference.</strong><p>Impact numbers count listings and pickups; food quantities and environmental effects are not independently verified.</p></div></div>
+    <section class="money-donation-card" aria-labelledby="money-donation-title"><div class="eyebrow">SUPPORT THE PLATFORM</div><h2 id="money-donation-title">Make a money contribution</h2><p class="subtitle">Contributions support GoodFood operations and are not directed to a specific NGO. Transfers are reviewed manually; there is no payment gateway or automatic settlement confirmation.</p>
+      ${state.manualContributionsEnabled ? `<div class="confirm-box money-payment-instructions"><strong>Payment instructions</strong><br><span>${escapeHtml(state.manualPaymentInstructions)}</span></div><p class="money-donation-note">Transfer the amount using the instructions above, then submit the reference shown by your payment app. Do not submit until the transfer is complete. An administrator will compare the amount and reference against the bank statement. Only then can it be marked paid.</p>
+      <form id="money-donation-form" class="money-donation-form manual-contribution-form"><div class="form-field"><label for="money-donation-amount">Amount (INR)</label><input id="money-donation-amount" name="amount" type="number" min="1.00" max="999999999.99" step="0.01" inputmode="decimal" placeholder="e.g. 250.00" required /></div><div class="form-field"><label for="donor-reference">UPI / bank transfer reference</label><input id="donor-reference" name="donorReference" type="text" minlength="3" maxlength="120" autocomplete="off" placeholder="Reference/UTR from your payment app" required /></div><button class="primary-button" type="submit">Submit for review</button></form><p class="money-donation-note">Do not enter passwords, PINs, account numbers, or card details. GoodFood does not currently issue tax-deductible receipts.</p>` : `<div class="confirm-box">${escapeHtml(state.manualContributionError || "Manual contributions are not configured yet. Please check back later.")}</div>`}
+    </section></div>`;
+  document.getElementById("money-donation-form")?.addEventListener("submit", submitManualContribution);
 }
 
 function adminView() {
@@ -364,6 +694,8 @@ function adminView() {
     <div class="activity-list">${state.members.length ? state.members.map((member) => `<div class="activity-row"><span class="activity-text"><strong>${escapeHtml(member.display_name)}</strong><small>${escapeHtml(roles[member.role] || member.role)} · ${escapeHtml(member.city)}, ${escapeHtml(member.country)}${member.is_suspended ? " · Suspended" : ""}</small></span><span class="status-pill">${member.is_verified ? "Verified" : "Pending review"}</span><button class="table-action" data-review-profile="${escapeHtml(member.id)}" data-verified="${member.is_verified}" data-suspended="${member.is_suspended}">${member.is_verified ? "Revoke verification" : "Verify"}</button><button class="table-action" data-suspend-profile="${escapeHtml(member.id)}" data-suspended="${member.is_suspended}">${member.is_suspended ? "Restore" : "Suspend"}</button></div>`).join("") : `<div class="empty-state"><strong>No partner accounts yet</strong></div>`}</div>
     <div class="section-heading"><div><h2>Donation listings</h2><p>Remove unsafe, expired, or inappropriate offers.</p></div></div>
     <div class="activity-list">${state.donations.length ? state.donations.map((item) => `<div class="activity-row"><span class="activity-text"><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(item.donor)} · ${escapeHtml(item.city)} · ${escapeHtml(item.quantity)} · ${escapeHtml(item.status)}</small></span>${item.status !== "Withdrawn" && item.status !== "Collected" ? `<button class="table-action" data-admin-remove="${escapeHtml(item.id)}">Remove listing</button>` : `<span class="status-pill">${escapeHtml(item.status)}</span>`}</div>`).join("") : `<div class="empty-state"><strong>No listings to review</strong></div>`}</div>
+    <div class="section-heading"><div><h2>Manual money contributions</h2><p>Compare submitted amounts and references with the official bank statement before deciding. Never mark paid based only on the donor’s submission.</p></div></div>
+    <div class="activity-list">${state.moneyDonations.length ? state.moneyDonations.map((item) => `<div class="activity-row"><span class="activity-text"><strong>${escapeHtml(formatRupees(item.amountPaise))} · ${escapeHtml(item.donorName || "GoodFood member")}</strong><small>Submitted ${escapeHtml(new Date(item.createdAt).toLocaleString())} · Donor reference: ${escapeHtml(item.donorReference)}${item.reviewNote ? `<br>Review note: ${escapeHtml(item.reviewNote)}` : ""}${item.verifiedReference ? `<br>Bank statement reference: ${escapeHtml(item.verifiedReference)}` : ""}${item.verifiedAmountPaise !== null && item.verifiedAmountPaise !== undefined ? `<br>Bank statement amount: ${escapeHtml(formatRupees(item.verifiedAmountPaise))}` : ""}</small></span>${item.rawStatus === "submitted" ? `<button class="table-action" data-review-contribution="${escapeHtml(item.id)}">Review</button>` : `<span class="status-pill">${escapeHtml(item.status)}</span>`}</div>`).join("") : `<div class="empty-state"><strong>No contributions submitted</strong></div>`}</div>
     <p class="privacy-note">Admin access requires Supabase app metadata set by the project owner. Profile emails and private pickup instructions are not included in this review screen.</p></div>`;
   root.querySelectorAll("[data-review-profile]").forEach((button) => {
     button.addEventListener("click", () => reviewMember(
@@ -382,11 +714,15 @@ function adminView() {
   root.querySelectorAll("[data-admin-remove]").forEach((button) => {
     button.addEventListener("click", () => moderateDonation(button.dataset.adminRemove));
   });
+  root.querySelectorAll("[data-review-contribution]").forEach((button) => {
+    button.addEventListener("click", () => openManualContributionReview(button.dataset.reviewContribution));
+  });
 }
 
 function render() {
   updateShell();
-  if (state.view === "my-activity") activityView();
+  if (state.view === "food-needs") foodNeedsView();
+  else if (state.view === "my-activity") activityView();
   else if (state.view === "impact") impactView();
   else if (state.view === "admin") adminView();
   else discoverView();
@@ -435,16 +771,21 @@ function openClaim(id) {
   });
 }
 
-function openDonationForm() {
+function openDonationForm(needId = null) {
   if (!state.profile?.is_verified || !["donor", "individual"].includes(state.role)) {
     setToast("A verified donor account is required to publish food listings.", true);
+    return;
+  }
+  const need = needId ? state.needs.find((item) => item.id === needId && item.status === "open") : null;
+  if (needId && !need) {
+    setToast("This food need is no longer open.", true);
     return;
   }
   const start = new Date(Date.now() + 60 * 60 * 1000);
   start.setMinutes(Math.ceil(start.getMinutes() / 15) * 15, 0, 0);
   const end = new Date(start.getTime() + 2 * 60 * 60 * 1000);
   const nowValue = getLocalDateTimeValue(new Date());
-  showModal(`<div class="eyebrow">SHARE SURPLUS FOOD</div><h2 id="modal-title">Offer a donation</h2><p class="modal-intro">Only your public display name and city are listed. Your exact pickup instructions stay private until you confirm a request.</p>
+  showModal(`<div class="eyebrow">SHARE SURPLUS FOOD</div><h2 id="modal-title">${need ? `Offer food for ${escapeHtml(need.ngoName)}` : "Offer a donation"}</h2><p class="modal-intro">${need ? `This offer will be visible only to ${escapeHtml(need.ngoName)}. They can request pickup if the food meets their need.` : "Only your public display name and city are listed. Your exact pickup instructions stay private until you confirm a request."}</p>
     <form id="donation-form"><div class="form-grid">
       <div class="form-field full"><label for="donation-title">What food are you offering? *</label><input id="donation-title" name="title" required maxlength="70" minlength="3" placeholder="e.g. Fresh seasonal produce boxes" /></div>
       <div class="form-field"><label for="donation-category">Category *</label><select id="donation-category" name="category">${categories.map((category) => `<option>${escapeHtml(category)}</option>`).join("")}</select></div>
@@ -489,7 +830,8 @@ function openDonationForm() {
         pickup_starts_at: new Date(pickupStartsAt).toISOString(),
         pickup_ends_at: new Date(pickupEndsAt).toISOString(),
         food_safety_confirmed: form.get("foodSafety") === "on",
-        status: "available"
+        status: "available",
+        need_id: need?.id || null
       });
       if (error) throw error;
       closeModal();
@@ -624,7 +966,7 @@ document.getElementById("modal-backdrop").addEventListener("click", (event) => {
   if (event.target.id === "modal-backdrop") closeModal();
 });
 document.getElementById("privacy-link").addEventListener("click", () => {
-  showModal(`<div class="eyebrow">PRIVACY BY DESIGN</div><h2 id="modal-title">Connect without oversharing.</h2><p class="modal-intro">Only a public display name, account type, and city are shown to signed-in members. Email addresses and exact pickup details are never exposed in public listings.</p><div class="confirm-box"><strong>1.</strong> Browse available donations.<br><strong>2.</strong> Verified NGOs request food using their organization profile.<br><strong>3.</strong> Donors share exact pickup instructions only after confirming a request.</div><p class="modal-intro">Goodfood uses Supabase for sign-in and shared, policy-protected community data.</p><div class="modal-actions"><button class="primary-button" id="cancel-modal">Got it</button></div>`);
+  showModal(`<div class="eyebrow">PRIVACY BY DESIGN</div><h2 id="modal-title">Connect without oversharing.</h2><p class="modal-intro">Only a public display name, account type, and city are shown to signed-in members. Email addresses and exact pickup details are never exposed in public listings.</p><div class="confirm-box"><strong>1.</strong> Browse available donations or open NGO food needs.<br><strong>2.</strong> Verified NGOs can request listed food or post a need for donors.<br><strong>3.</strong> Donors share exact pickup instructions only after confirming a request.</div><p class="modal-intro">Goodfood uses Supabase for sign-in and shared, policy-protected community data.</p><div class="modal-actions"><button class="primary-button" id="cancel-modal">Got it</button></div>`);
   document.getElementById("cancel-modal").addEventListener("click", closeModal);
 });
 document.getElementById("help-button").addEventListener("click", () => {
@@ -725,6 +1067,10 @@ function showSignedOut() {
   state.role = null;
   state.donations = [];
   state.claims = [];
+  state.moneyDonations = [];
+  state.manualContributionsEnabled = false;
+  state.manualPaymentInstructions = "";
+  state.manualContributionError = "";
   state.members = [];
   state.stats = null;
   state.saved = [];

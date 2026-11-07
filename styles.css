@@ -102,6 +102,15 @@ h1 { font: 700 29px Manrope, sans-serif; letter-spacing: -1.1px; margin: 8px 0 7
 .hero-copy { flex: 1; }
 .hero-copy strong { display: block; color: #35523b; font-size: 12px; margin-bottom: 4px; }
 .hero-copy p { margin: 0; color: #6b7c6c; font-size: 10px; line-height: 1.5; }
+.money-donation-card { margin-top: 24px; padding: 24px; background: #fff; border: 1px solid var(--line); border-radius: 11px; }
+.money-donation-card h2 { margin: 8px 0 7px; color: #25362a; font: 700 19px Manrope, sans-serif; letter-spacing: -.4px; }
+.money-donation-card > .subtitle { max-width: 650px; line-height: 1.6; }
+.money-donation-form { display: flex; align-items: flex-end; gap: 12px; margin-top: 19px; }
+.manual-contribution-form { flex-wrap: wrap; }
+.money-donation-form .form-field { width: min(100%, 260px); margin: 0; }
+.money-donation-form .primary-button { min-height: 37px; white-space: nowrap; }
+.money-donation-note { margin: 15px 0 0; color: #818a81; font-size: 10px; line-height: 1.6; }
+.money-payment-instructions { white-space: pre-wrap; overflow-wrap: anywhere; }
 .hero-stat { border-left: 1px solid #d2dfd0; padding-left: 25px; min-width: 130px; }
 .hero-stat strong { display: block; color: #315a3a; font: 700 21px Manrope, sans-serif; }
 .hero-stat span { font-size: 9px; color: #778879; }
@@ -145,6 +154,22 @@ h1 { font: 700 29px Manrope, sans-serif; letter-spacing: -1.1px; margin: 8px 0 7
 .empty-state { padding: 50px 20px; text-align: center; border: 1px dashed #dfe4da; border-radius: 9px; color: #7a857a; grid-column: 1/-1; }
 .empty-state strong { display: block; margin: 10px; color: #45554a; }
 .empty-state p { font-size: 11px; }
+.need-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 15px; }
+.need-card { min-width: 0; padding: 19px; background: #fff; border: 1px solid #e9ece5; border-radius: 9px; animation: rise-in .38s cubic-bezier(.2,.7,.25,1) both; }
+.need-card-header { display: flex; justify-content: space-between; align-items: center; min-height: 24px; margin-bottom: 12px; }
+.need-card h2 { margin: 0 0 6px; color: #2d3a30; font: 700 16px Manrope, sans-serif; }
+.need-org { margin-bottom: 12px; color: #788078; font-size: 10px; }
+.need-description { margin: 12px 0; color: #667166; font-size: 11px; line-height: 1.6; overflow-wrap: anywhere; }
+.need-offer-button { margin-top: 14px; }
+.need-offers { margin-top: 15px; padding-top: 13px; border-top: 1px solid #f0f1ed; }
+.need-offers > strong { color: #465749; font-size: 11px; }
+.need-offer-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 11px 0; border-bottom: 1px solid #f0f1ed; }
+.need-offer-row:last-child { border-bottom: 0; }
+.need-offer-row > span { min-width: 0; display: grid; gap: 4px; }
+.need-offer-row > span strong { color: #39483d; font-size: 10px; overflow-wrap: anywhere; }
+.need-offer-row small, .need-empty { color: #818a81; font-size: 9px; }
+.need-empty { margin: 10px 0 2px; }
+.close-need-button { margin-top: 12px; }
 
 .stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 13px; margin: 20px 0 27px; }
 .stat-card { background: white; border: 1px solid var(--line); border-radius: 9px; padding: 17px; }
@@ -197,6 +222,7 @@ h1 { font: 700 29px Manrope, sans-serif; letter-spacing: -1.1px; margin: 8px 0 7
   .page-wrap { padding-left: 30px; padding-right: 30px; }
   .topbar { padding: 0 30px; }
   .donation-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .need-grid { grid-template-columns: 1fr; }
 }
 @media (max-width: 760px) {
   .sidebar { width: 66px; flex-basis: 66px; padding: 18px 9px 10px; align-items: center; }
@@ -223,6 +249,7 @@ h1 { font: 700 29px Manrope, sans-serif; letter-spacing: -1.1px; margin: 8px 0 7
 }
 @media (max-width: 520px) {
   .donation-grid { grid-template-columns: 1fr; }
+  .need-grid { grid-template-columns: 1fr; }
   .food-art { height: 145px; }
   .toolbar { flex-wrap: wrap; }
   .search-box { flex-basis: 100%; }
@@ -237,6 +264,9 @@ h1 { font: 700 29px Manrope, sans-serif; letter-spacing: -1.1px; margin: 8px 0 7
   .breadcrumb { font-size: 10px; }
   .form-grid { grid-template-columns: 1fr; }
   .form-field.full { grid-column: auto; }
+  .money-donation-card { padding: 18px; }
+  .money-donation-form { align-items: stretch; flex-direction: column; }
+  .money-donation-form .form-field { width: 100%; }
   .auth-card { padding: 24px 20px; }
   .activity-row { flex-wrap: wrap; }
   .activity-row .activity-text { flex-basis: calc(100% - 45px); }

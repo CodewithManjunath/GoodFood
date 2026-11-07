@@ -8,11 +8,28 @@ Requires Node.js 22 or newer and the Goodfood Supabase project.
 
 1. Copy `.env.example` to `.env.local`.
 2. Set `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, and `SUPABASE_JWKS_URL`. The publishable key is intended for the browser; never expose a Supabase secret/service-role key.
-3. In the Supabase SQL Editor, run `supabase/migrations/20261106230000_goodfood_production.sql` as the project owner. The app requires these tables, role checks, RPCs, and row-level security policies.
+3. In the Supabase SQL Editor, run `supabase/migrations/20261106230000_goodfood_production.sql` and then `supabase/migrations/20261107110000_ngo_food_needs.sql` as the project owner. The app requires these tables, role checks, RPCs, and row-level security policies.
 4. Configure Supabase Auth: enable email/password; configure Google OAuth if desired; set the production site's URL and allowed redirect URLs. Keep the Supabase callback URL in the Google OAuth client's authorized redirect URIs.
-5. Run `npm ci`, `npm run dev`, and open the local Vite URL shown in the terminal. Run `npm test` for the Node server route smoke tests and `npm run build` for a production build.
+5. Run `npm ci`, `npm run dev`, and open the local Vite URL shown in the terminal. Run `npm test` for the Node server route and manual-contribution validation tests and `npm run build` for a production build.
 
 The migration creates a private profile record for every Auth user, shared donation and request tables, and transactional functions for requesting, confirming, declining, withdrawing, and completing a pickup. The database enforces ownership and partner roles independently of the browser. Exact pickup instructions are stored with a request and are readable only by the donor, requesting NGO, and platform administrator.
+
+## Manual money contributions
+
+Money contributions are optional and support GoodFood platform operations; they are not donations to a specific NGO. This is a **manual bank/UPI transfer and administrator review workflow**, not a payment gateway. GoodFood does not initiate transfers, read bank alerts, or automatically verify settlement.
+
+To enable the form after reviewing the operator, payment, refund, receipt, privacy, and regulatory policies:
+
+1. Apply `supabase/migrations/20261107100000_manual_money_contributions.sql` after the core Goodfood migration. The NGO food-needs migration is independent of manual contributions.
+2. Set `GOODFOOD_MANUAL_PAYMENT_INSTRUCTIONS` in the Node server runtime environment (for example Render). This is public payment information shown to donors, such as the official GoodFood UPI ID and transfer instructions. Never put passwords, PINs, card details, or private credentials in it.
+3. Ensure the server has `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_JWKS_URL`, and `SUPABASE_SERVICE_ROLE_KEY`. Keep the service-role key server-only and never prefix it with `VITE_`.
+4. Restart/redeploy the server and verify the instructions and submission UI using controlled test accounts.
+
+The donor transfers funds outside GoodFood and submits the amount and transfer reference. The record remains **Awaiting review** until a platform administrator compares both against the official bank statement, adds an audit note, and submits the same reference found in that statement. Only this manual action changes the record to **Paid**. Donor-submitted details alone do not prove receipt. Rejected records are retained for audit and cannot be edited or approved later. Admin decisions use the server-verified Supabase `app_metadata.role = "admin"` claim; the browser cannot directly update the ledger.
+
+Only publish payment instructions for an account authorized to receive GoodFood contributions. Manual review is an operational human check, not an independent bank API or a guarantee of settlement finality; define review access, dual-control/accounting procedures, refunds, and reconciliation with qualified advisers before public launch.
+
+The feature remains disabled when the instructions, Supabase server configuration, or migration are missing. Do not describe this workflow as instant, automatic, gateway-verified, or bank-API-verified. GoodFood does not currently issue tax-deductible receipts. No bank account/UPI instructions have been configured and no contribution has been verified in this repository change.
 
 ## Launch on Render
 
@@ -20,7 +37,7 @@ The existing Node.js server serves the production Vite build and exposes `/healt
 
 1. Import `CodewithManjunath/GoodFood` from GitHub as a Render web service.
 2. Use Node as the runtime, `npm ci && npm run build` as the build command, and `npm start` as the start command. Set the health check path to `/healthz`.
-3. Provide the Supabase settings in Render's environment. `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` must be available during the build; `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, and `SUPABASE_JWKS_URL` are server runtime settings.
+3. Provide the Supabase settings in Render's environment. `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` must be available during the build; `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, and `SUPABASE_JWKS_URL` are server runtime settings. Configure `SUPABASE_SERVICE_ROLE_KEY` and `GOODFOOD_MANUAL_PAYMENT_INSTRUCTIONS` only if enabling manual contributions.
 4. After Render assigns the site URL, set it as the Supabase Auth site URL and add it to the allowed redirect URLs. Test email confirmation, sign-in, Google sign-in (if enabled), and password/account flows on the deployed HTTPS origin.
 5. Create the first platform administrator through Supabase's trusted user-management tools by assigning `app_metadata.role = "admin"`. Never let a user grant themselves admin access.
 
@@ -28,13 +45,15 @@ Choose a paid, always-on Render instance and a Supabase plan appropriate for the
 
 ## Privacy and terms
 
-The public [Privacy Notice](https://goodfood-font.onrender.com/privacy.html) and [Terms of Service](https://goodfood-font.onrender.com/terms.html) describe the current app behavior and can be linked from the Google OAuth consent screen. They are operational drafts, not legal advice. The platform operator must review them for the actual operating entity, support contact, applicable jurisdictions, retention schedule, incident process, and regulatory requirements before public launch. Update both the site and Google Auth Platform consent-screen links whenever the policies change.
+The public [Privacy Notice](https://goodfood-font.onrender.com/privacy.html) and [Terms of Service](https://goodfood-font.onrender.com/terms.html) describe the current app behavior and can be linked from the Google OAuth consent screen. They are operational drafts, not legal advice. The platform operator must review them for the actual operating entity, support contact, applicable jurisdictions, manual contribution/refund policy, retention schedule, incident process, and regulatory requirements before public launch. Update both the site and Google Auth Platform consent-screen links whenever the policies change.
 
 ## Roles and verification
 
 - Signup supports NGOs/recipients, food businesses, and individual donors. Each has a separate Supabase Auth account.
-- New accounts start unverified. A platform admin must review and verify an account before an NGO can request food or a donor can publish a listing.
-- The frontend stores only public listing data and each signed-in user's saved-list preference. Donations, claims, account roles, verification decisions, and pickup instructions are shared through Supabase.
+- New accounts start unverified. A platform admin must review and verify an account before an NGO can post food needs or request food, or before a donor can publish a listing or offer food for a need.
+- Verified NGOs can post a food need with a category, quantity, details, and deadline up to 30 days away. Verified donors can offer a food listing for that need; only that NGO sees the offer and can request pickup. A collected pickup marks its linked need fulfilled. NGOs can close a need after resolving active pickup requests.
+- The original donation feed remains available: verified individual donors and food businesses can publish food directly, and verified NGOs can request those listings.
+- The frontend stores only public listing data and each signed-in user's saved-list preference. Food needs, donations, claims, account roles, verification decisions, and pickup instructions are shared through Supabase.
 - Admin rights come only from the signed-in user's Supabase `app_metadata.role`. The public profile's role cannot be edited after signup or profile completion.
 - A donor must confirm a request before the private pickup instructions become visible to its requesting NGO. The NGO marks a confirmed pickup collected.
 

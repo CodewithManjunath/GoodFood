@@ -63,6 +63,7 @@ const state = {
 };
 
 const root = document.getElementById("view-root");
+let pageMotionObserver = null;
 const pageTitles = {
   discover: "Discover food",
   "food-needs": "Food needs",
@@ -133,6 +134,8 @@ function showAuthSuccess(message) {
 function updateShell() {
   document.getElementById("profile-name").textContent = accountName();
   document.querySelector(".avatar").textContent = initials(accountName());
+  document.getElementById("topbar-avatar").textContent = initials(accountName());
+  document.getElementById("topbar-profile-name").textContent = accountName();
   document.querySelector(".profile-meta small").textContent = roles[state.role] || "Goodfood member";
   document.querySelector(".admin-only").classList.toggle("hidden", state.role !== "admin");
   const activityCount = state.role === "ngo"
@@ -144,7 +147,13 @@ function updateShell() {
   document.getElementById("page-label").textContent = pageTitles[state.view] || "Discover food";
   document.querySelectorAll(".nav-item").forEach((item) => {
     item.classList.toggle("active", item.dataset.view === state.view);
+    const label = item.textContent.trim().replace(/\s+/g, " ");
+    item.setAttribute("aria-label", label);
+    item.title = label;
+    if (item.dataset.view === state.view) item.setAttribute("aria-current", "page");
+    else item.removeAttribute("aria-current");
   });
+  document.getElementById("app-shell").dataset.role = state.role || "";
   const location = document.querySelector(".location-pill");
   location.innerHTML = `<span>⌖</span> ${escapeHtml(state.profile?.city || "Your city")}, ${escapeHtml(state.profile?.country || "India")}`;
 }
@@ -468,6 +477,34 @@ function donationCard(item) {
     </article>`;
 }
 
+function dashboardStatsMarkup() {
+  if (state.role === "ngo") {
+    const ownClaims = state.claims.filter((claim) => claim.ngoId === state.user.id);
+    const openNeeds = state.needs.filter((need) =>
+      need.ngoId === state.user.id && need.status === "open" && new Date(need.neededBy).getTime() > Date.now()
+    ).length;
+    const metrics = [
+      ["Open food needs", openNeeds, "Requests shared with verified donors"],
+      ["Pending requests", ownClaims.filter((claim) => claim.status === "Requested").length, "Waiting for donor response"],
+      ["Confirmed pickups", ownClaims.filter((claim) => claim.status === "Confirmed").length, "Ready for collection"],
+      ["Pickups completed", ownClaims.filter((claim) => claim.status === "Collected").length, "Successful food handoffs"]
+    ];
+    return `<section class="dashboard-stats" aria-label="Organization activity">${metrics.map(([label, count, note]) => `<article class="stat-card"><span>${label}</span><strong data-count-up="${count}">${count}</strong><small>${note}</small></article>`).join("")}</section>`;
+  }
+  if (state.role === "donor" || state.role === "individual") {
+    const ownDonations = state.donations.filter((donation) => donation.donorId === state.user.id);
+    const ownClaims = state.claims.filter((claim) => claim.donorId === state.user.id);
+    const metrics = [
+      ["Food listings", ownDonations.length, "Shared with the community"],
+      ["Active listings", ownDonations.filter((donation) => donation.status === "Available").length, "Open for pickup requests"],
+      ["Requests to review", ownClaims.filter((claim) => claim.status === "Requested").length, "Waiting for your response"],
+      ["Pickups completed", ownClaims.filter((claim) => claim.status === "Collected").length, "Successful food handoffs"]
+    ];
+    return `<section class="dashboard-stats" aria-label="Your donation activity">${metrics.map(([label, count, note]) => `<article class="stat-card"><span>${label}</span><strong data-count-up="${count}">${count}</strong><small>${note}</small></article>`).join("")}</section>`;
+  }
+  return "";
+}
+
 function discoverView() {
   const isDonor = state.role === "donor" || state.role === "individual";
   const available = state.donations.filter((item) =>
@@ -488,6 +525,7 @@ function discoverView() {
       </div>
       ${isDonor && !state.profile?.is_verified ? `<div class="confirm-box verification-notice"><strong>Account verification required.</strong> A platform administrator must verify this account before it can publish a food donation.</div>` : ""}
       ${state.role === "ngo" && !state.profile?.is_verified ? `<div class="confirm-box verification-notice"><strong>Account verification required.</strong> You can browse listings; an administrator must verify this organization before it can request food.</div>` : ""}
+      ${dashboardStatsMarkup()}
       <div class="hero-card">
         <div class="hero-symbol">✳</div>
         <div class="hero-copy"><strong>Good things happen when we share.</strong><p>Verified donors can post surplus food directly—no request needed to publish. NGOs can then request a handoff. Private pickup instructions are shared only after a donor confirms.</p></div>
@@ -708,7 +746,7 @@ function activityView() {
 function impactView() {
   const stats = state.stats || { total_donations: 0, collected_pickups: 0, available_donations: 0 };
   root.innerHTML = `<div class="page-wrap"><div class="eyebrow">LOCAL GOOD, ADDED UP</div><h1>Community impact</h1><p class="subtitle">Live totals from confirmed activity on Goodfood.</p>
-    <div class="stats-grid"><div class="stat-card"><span>Total listings</span><strong>${Number(stats.total_donations)}</strong><small>Listings not withdrawn</small></div><div class="stat-card"><span>Pickups completed</span><strong>${Number(stats.collected_pickups)}</strong><small>Confirmed handoffs</small></div><div class="stat-card"><span>Available now</span><strong>${Number(stats.available_donations)}</strong><small>Current listings with open pickup windows</small></div></div>
+    <div class="stats-grid"><div class="stat-card"><span>Total listings</span><strong data-count-up="${Number(stats.total_donations)}">${Number(stats.total_donations)}</strong><small>Listings not withdrawn</small></div><div class="stat-card"><span>Pickups completed</span><strong data-count-up="${Number(stats.collected_pickups)}">${Number(stats.collected_pickups)}</strong><small>Confirmed handoffs</small></div><div class="stat-card"><span>Available now</span><strong data-count-up="${Number(stats.available_donations)}">${Number(stats.available_donations)}</strong><small>Current listings with open pickup windows</small></div></div>
     <div class="hero-card"><div class="hero-symbol">✳</div><div class="hero-copy"><strong>Small acts make a real difference.</strong><p>Impact numbers count listings and pickups; food quantities and environmental effects are not independently verified.</p></div></div>
     <section class="money-donation-card" aria-labelledby="money-donation-title"><div class="eyebrow">SUPPORT THE PLATFORM</div><h2 id="money-donation-title">Make a money contribution</h2><p class="subtitle">Contributions support GoodFood operations and are not directed to a specific NGO. Transfers are reviewed manually; there is no payment gateway or automatic settlement confirmation.</p>
       ${state.manualContributionsEnabled ? `<div class="confirm-box money-payment-instructions"><strong>Payment instructions</strong><br><span>${escapeHtml(state.manualPaymentInstructions)}</span></div><p class="money-donation-note">Transfer the amount using the instructions above, then submit the reference shown by your payment app. Do not submit until the transfer is complete. An administrator will compare the amount and reference against the bank statement. Only then can it be marked paid.</p>
@@ -723,7 +761,7 @@ function adminView() {
     return discoverView();
   }
   root.innerHTML = `<div class="page-wrap"><div class="eyebrow">PLATFORM MANAGEMENT</div><h1>Admin console</h1><p class="subtitle">Review partner accounts and moderate food listings. Confirm verification using your organization’s documented checks before approving access.</p>
-    <div class="stats-grid"><div class="stat-card"><span>Active listings</span><strong>${state.donations.filter((item) => item.status === "Available").length}</strong><small>Accepting requests</small></div><div class="stat-card"><span>Pending requests</span><strong>${state.claims.filter((item) => item.status === "Requested").length}</strong><small>Awaiting donor decision</small></div><div class="stat-card"><span>Partners</span><strong>${state.members.length}</strong><small>Registered accounts</small></div></div>
+    <div class="stats-grid"><div class="stat-card"><span>Active listings</span><strong data-count-up="${state.donations.filter((item) => item.status === "Available").length}">${state.donations.filter((item) => item.status === "Available").length}</strong><small>Accepting requests</small></div><div class="stat-card"><span>Pending requests</span><strong data-count-up="${state.claims.filter((item) => item.status === "Requested").length}">${state.claims.filter((item) => item.status === "Requested").length}</strong><small>Awaiting donor decision</small></div><div class="stat-card"><span>Partners</span><strong data-count-up="${state.members.length}">${state.members.length}</strong><small>Registered accounts</small></div></div>
     <div class="section-heading"><div><h2>Partner verification</h2><p>Unverified accounts cannot publish or request food.</p></div></div>
     <div class="activity-list">${state.members.length ? state.members.map((member) => `<div class="activity-row"><span class="activity-text"><strong>${escapeHtml(member.display_name)}</strong><small>${escapeHtml(roles[member.role] || member.role)} · ${escapeHtml(member.city)}, ${escapeHtml(member.country)}${member.is_suspended ? " · Suspended" : ""}</small></span><span class="status-pill">${member.is_verified ? "Verified" : "Pending review"}</span><button class="table-action" data-review-profile="${escapeHtml(member.id)}" data-verified="${member.is_verified}" data-suspended="${member.is_suspended}">${member.is_verified ? "Revoke verification" : "Verify"}</button><button class="table-action" data-suspend-profile="${escapeHtml(member.id)}" data-suspended="${member.is_suspended}">${member.is_suspended ? "Restore" : "Suspend"}</button></div>`).join("") : `<div class="empty-state"><strong>No partner accounts yet</strong></div>`}</div>
     <div class="section-heading"><div><h2>Donation listings</h2><p>Remove unsafe, expired, or inappropriate offers.</p></div></div>
@@ -760,6 +798,51 @@ function render() {
   else if (state.view === "impact") impactView();
   else if (state.view === "admin") adminView();
   else discoverView();
+  initializePageMotion();
+}
+
+function initializePageMotion() {
+  pageMotionObserver?.disconnect();
+  const targets = root.querySelectorAll(".hero-card, .donation-card, .need-card, .stat-card, .activity-row, .money-donation-card");
+  if (window.matchMedia("(prefers-reduced-motion: reduce)").matches || !("IntersectionObserver" in window)) {
+    targets.forEach((element) => {
+      element.classList.add("motion-reveal", "is-visible");
+      const counter = element.querySelector("[data-count-up]");
+      if (counter) counter.textContent = counter.dataset.countUp;
+    });
+    return;
+  }
+
+  pageMotionObserver = new IntersectionObserver((entries, observer) => {
+    entries.forEach((entry) => {
+      if (!entry.isIntersecting) return;
+      entry.target.classList.add("is-visible");
+      const counter = entry.target.querySelector("[data-count-up]");
+      if (counter) animateCountUp(counter);
+      observer.unobserve(entry.target);
+    });
+  }, { threshold: 0.12 });
+  targets.forEach((element) => {
+    element.classList.add("motion-reveal");
+    pageMotionObserver.observe(element);
+  });
+}
+
+function animateCountUp(element) {
+  const target = Number(element.dataset.countUp);
+  if (!Number.isFinite(target) || target <= 0) {
+    element.textContent = "0";
+    return;
+  }
+  const duration = 650;
+  const start = performance.now();
+  const tick = (now) => {
+    const progress = Math.min((now - start) / duration, 1);
+    const eased = 1 - (1 - progress) ** 3;
+    element.textContent = String(Math.round(target * eased));
+    if (progress < 1) requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
 }
 
 function setView(view) {
@@ -1008,6 +1091,9 @@ document.getElementById("help-button").addEventListener("click", () => {
   document.getElementById("cancel-modal").addEventListener("click", closeModal);
 });
 document.getElementById("profile-button").addEventListener("click", () => {
+  setToast(`${accountName()} · ${state.profile?.city || ""}, ${state.profile?.country || ""}`);
+});
+document.getElementById("topbar-profile").addEventListener("click", () => {
   setToast(`${accountName()} · ${state.profile?.city || ""}, ${state.profile?.country || ""}`);
 });
 

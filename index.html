@@ -19,61 +19,199 @@
   </head>
   <body>
     <main class="auth-screen" id="auth-screen">
-      <a class="brand auth-brand" href="#" aria-label="Goodfood home">
-        <span class="brand-mark" aria-hidden="true">g</span>
-        <span>goodfood<span class="brand-period">.</span></span>
-      </a>
-      <section class="auth-card">
-        <div class="eyebrow">YOUR COMMUNITY FOOD NETWORK</div>
-        <h1 id="auth-title">Welcome back</h1>
-        <p class="auth-subtitle" id="auth-subtitle">Sign in to your own Goodfood account.</p>
-        <div class="auth-error hidden" id="auth-error" role="alert"></div>
-        <form id="auth-form">
-          <div class="form-field hidden" id="name-field">
-            <label for="auth-name">Your name or organization</label>
-            <input id="auth-name" name="name" autocomplete="organization" minlength="2" maxlength="80" />
-          </div>
-          <div class="form-field hidden" id="role-field">
-            <label for="auth-role">Account type</label>
-            <select id="auth-role" name="role">
-              <option value="ngo">NGO / recipient organization</option>
-              <option value="donor">Restaurant, resort, or food business</option>
-              <option value="individual">Individual food donor</option>
-            </select>
-          </div>
-          <div class="form-grid hidden" id="location-fields">
-            <div class="form-field">
-              <label for="auth-country">Country</label>
-              <input id="auth-country" name="country" autocomplete="country-name" minlength="2" maxlength="80" />
-            </div>
-            <div class="form-field">
-              <label for="auth-city">City</label>
-              <input id="auth-city" name="city" autocomplete="address-level2" minlength="2" maxlength="100" />
-            </div>
-          </div>
-          <div class="form-field">
-            <label for="auth-email">Email address</label>
-            <input id="auth-email" name="email" type="email" autocomplete="email" required maxlength="254" />
-          </div>
-          <div class="form-field">
-            <label for="auth-password">Password</label>
-            <input id="auth-password" name="password" type="password" autocomplete="current-password" required minlength="10" maxlength="128" />
-            <small class="password-hint hidden" id="password-hint">Use at least 10 characters.</small>
-          </div>
-          <button class="primary-button auth-submit" id="auth-submit" type="submit">Sign in</button>
-        </form>
-        <div class="auth-divider"><span>or continue with</span></div>
-        <button class="google-button" id="google-sign-in" type="button"><span class="google-mark">G</span> Continue with Google</button>
-        <p class="auth-switch"><span id="auth-switch-prompt">New to Goodfood?</span> <button class="text-link" id="auth-switch" type="button">Create an account</button></p>
-        <p class="auth-admin-note">Admin accounts are created separately by the platform owner.</p>
+      <section class="auth-story" aria-labelledby="story-title">
+        <div class="story-topline">
+          <a class="brand story-brand" href="#" aria-label="Goodfood home">
+            <span class="brand-mark" aria-hidden="true">g</span>
+            <span>goodfood<span class="brand-period">.</span></span>
+          </a>
+          <span class="story-badge"><span></span> GOODNESS IN MOTION</span>
+        </div>
+        <div class="story-copy">
+          <p class="story-kicker">A little care goes a long way</p>
+          <h2 id="story-title">Share food.<br /><span>Spread happiness.</span></h2>
+          <p>One small donation can bring a big smile. Help good food find its way to someone who needs it.</p>
+        </div>
+        <div class="story-art" aria-label="Illustration of a restaurant donor, a volunteer, and families sharing donated meals">
+          <div class="art-glow art-glow-one"></div>
+          <div class="art-glow art-glow-two"></div>
+          <svg class="donation-journey" viewBox="0 0 760 460" role="img" aria-labelledby="journey-title journey-description">
+            <title id="journey-title">From a generous kitchen to a shared meal</title>
+            <desc id="journey-description">A restaurant owner packs fresh food, a volunteer carries a donation box, and a family shares a happy meal.</desc>
+            <defs>
+              <linearGradient id="journey-sky" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0" stop-color="#fff5da" />
+                <stop offset="1" stop-color="#f8d7a2" />
+              </linearGradient>
+              <linearGradient id="journey-ground" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0" stop-color="#f1c982" />
+                <stop offset="1" stop-color="#eeb873" />
+              </linearGradient>
+              <filter id="soft-shadow" x="-30%" y="-30%" width="160%" height="170%">
+                <feDropShadow dx="0" dy="12" stdDeviation="10" flood-color="#8f552b" flood-opacity=".15" />
+              </filter>
+            </defs>
+            <rect x="28" y="24" width="704" height="410" rx="34" fill="url(#journey-sky)" />
+            <circle cx="615" cy="94" r="44" fill="#ffd782" opacity=".8" />
+            <path d="M29 310c92-39 155 18 250-4s166-22 246 5 132 14 207-18v107H29z" fill="#dbe9c8" />
+            <path d="M29 362c116-35 178 16 291-1s174-29 258-2 107 11 154-7v82H29z" fill="url(#journey-ground)" />
+            <path d="M118 207c112-67 207 80 325 7s177-25 225 6" fill="none" stroke="#fff9ed" stroke-width="5" stroke-linecap="round" stroke-dasharray="3 13" />
+            <path d="M118 207c112-67 207 80 325 7s177-25 225 6" fill="none" stroke="#e9a43c" stroke-width="2" stroke-linecap="round" stroke-dasharray="3 13" class="journey-dashes" />
+
+            <g class="scene-kitchen" filter="url(#soft-shadow)">
+              <rect x="60" y="120" width="188" height="177" rx="18" fill="#fffdf8" />
+              <path d="M60 155h188v20H60z" fill="#f3a64b" />
+              <rect x="76" y="185" width="156" height="91" rx="9" fill="#eaf1e3" />
+              <path d="M88 276v-49c0-23 17-39 39-39h55c22 0 39 16 39 39v49z" fill="#d7e8d0" />
+              <path d="M107 225c6-11 17-16 31-16s25 5 31 16" fill="none" stroke="#73a867" stroke-width="6" stroke-linecap="round" />
+              <rect x="83" y="112" width="142" height="15" rx="7" fill="#d88637" />
+              <rect x="96" y="105" width="23" height="9" rx="4" fill="#f9d879" />
+              <rect x="127" y="101" width="24" height="13" rx="6" fill="#7cab60" />
+              <rect x="165" y="105" width="27" height="9" rx="4" fill="#e06e42" />
+              <circle cx="144" cy="205" r="26" fill="#b96d45" />
+              <path d="M118 201c3-26 46-37 57-5-8-7-15-9-24-9-11 0-19 6-33 14" fill="#483329" />
+              <circle cx="135" cy="207" r="2.5" fill="#302b24" />
+              <circle cx="152" cy="207" r="2.5" fill="#302b24" />
+              <path d="M138 217q6 7 12 0" fill="none" stroke="#8f4e3a" stroke-width="2.5" stroke-linecap="round" />
+              <path d="M112 263c4-26 17-39 32-39s29 13 32 39" fill="#e77e46" />
+              <path d="M116 255l-21 17M172 250l25 16" stroke="#b96d45" stroke-width="9" stroke-linecap="round" />
+              <path d="M181 270h39v-28h-39z" fill="#d79a52" />
+              <path d="M177 242h47l-7-12h-33z" fill="#efb95f" />
+              <path d="M189 240q8-20 17 0" fill="#69a955" />
+              <circle cx="201" cy="232" r="6" fill="#ef7b45" />
+              <rect x="86" y="292" width="135" height="9" rx="4" fill="#a96c3e" />
+            </g>
+
+            <g class="scene-volunteer" filter="url(#soft-shadow)">
+              <circle cx="380" cy="208" r="24" fill="#d99a6f" />
+              <path d="M356 204q4-28 29-25 18 2 21 24-12-9-23-9-13 0-27 10" fill="#46332b" />
+              <circle cx="372" cy="209" r="2.4" fill="#312a25" />
+              <circle cx="388" cy="209" r="2.4" fill="#312a25" />
+              <path d="M374 218q6 6 12 0" fill="none" stroke="#8a493b" stroke-width="2.5" stroke-linecap="round" />
+              <path d="M352 262c3-24 13-38 28-38s26 14 29 38l7 62h-76z" fill="#4d9b69" />
+              <path d="M360 248l-26 28M402 249l23 24" stroke="#d99a6f" stroke-width="9" stroke-linecap="round" />
+              <path d="M349 318l-5 43M406 318l8 43" stroke="#394a43" stroke-width="13" stroke-linecap="round" />
+              <path d="M333 363h20M405 363h21" stroke="#684432" stroke-width="8" stroke-linecap="round" />
+              <g class="floating-box">
+                <path d="M408 263h68v48h-68z" fill="#c98948" />
+                <path d="M408 263l33-20 35 20-34 18z" fill="#eab565" />
+                <path d="M441 281v30" stroke="#a56d38" stroke-width="3" />
+                <path d="M421 258q7-17 17 0" fill="#64a64f" />
+                <circle cx="442" cy="253" r="6" fill="#ef7a43" />
+                <path d="M453 258q7-16 14-1" fill="#86b85c" />
+              </g>
+            </g>
+
+            <g class="scene-family" filter="url(#soft-shadow)">
+              <circle cx="572" cy="252" r="23" fill="#bd7652" />
+              <path d="M549 246q4-25 27-25 20 1 21 26-11-8-24-8-11 0-24 7" fill="#342b27" />
+              <circle cx="564" cy="253" r="2.3" fill="#302a25" />
+              <circle cx="579" cy="253" r="2.3" fill="#302a25" />
+              <path d="M565 262q6 6 12 0" fill="none" stroke="#874b39" stroke-width="2.5" stroke-linecap="round" />
+              <path d="M544 307c3-23 13-35 28-35s25 12 28 35v40h-63z" fill="#f0a144" />
+              <circle cx="641" cy="263" r="20" fill="#e0aa7f" />
+              <path d="M621 260q2-24 22-24 17 2 19 24-10-7-20-7-9 0-21 7" fill="#50392e" />
+              <circle cx="635" cy="264" r="2" fill="#312a25" />
+              <circle cx="648" cy="264" r="2" fill="#312a25" />
+              <path d="M636 272q5 6 10 0" fill="none" stroke="#985941" stroke-width="2.2" stroke-linecap="round" />
+              <path d="M616 310c2-20 11-31 25-31s23 11 25 31v36h-55z" fill="#78a96b" />
+              <circle cx="610" cy="328" r="18" fill="#e7ae4f" />
+              <path d="M580 299l28 30M635 301l-24 27" stroke="#bd7652" stroke-width="8" stroke-linecap="round" />
+              <path d="M592 323h36v24h-36z" fill="#c98948" />
+              <path d="M592 323l18-11 18 11-18 10z" fill="#eab565" />
+              <path d="M602 320q6-13 11 0" fill="#6ba454" />
+            </g>
+
+            <g class="story-sparkles" fill="#fffaf0">
+              <path d="M295 105l4 12 12 4-12 4-4 12-4-12-12-4 12-4z" />
+              <path d="M526 155l3 9 9 3-9 3-3 9-3-9-9-3 9-3z" />
+              <circle cx="270" cy="270" r="4" />
+              <circle cx="682" cy="213" r="4" />
+            </g>
+            <g class="meal-heart">
+              <path d="M302 183c-13-12-32 6 0 31 32-25 13-43 0-31" fill="#ed8650" />
+            </g>
+            <g class="journey-caption">
+              <rect x="73" y="324" width="177" height="36" rx="18" fill="#fffdf8" opacity=".95" />
+              <text x="161" y="347" text-anchor="middle" fill="#56634f" font-size="12" font-family="DM Sans, sans-serif" font-weight="700">PACKED WITH CARE</text>
+              <rect x="491" y="373" width="206" height="36" rx="18" fill="#fffdf8" opacity=".95" />
+              <text x="594" y="396" text-anchor="middle" fill="#56634f" font-size="12" font-family="DM Sans, sans-serif" font-weight="700">SHARED WITH A SMILE</text>
+            </g>
+          </svg>
+          <div class="floating-food food-one" aria-hidden="true">🥕</div>
+          <div class="floating-food food-two" aria-hidden="true">🍊</div>
+          <div class="floating-food food-three" aria-hidden="true">🥬</div>
+        </div>
+        <div class="story-impact">
+          <span class="impact-icon" aria-hidden="true">✦</span>
+          <span class="impact-count"><strong>1</strong><small>small act</small></span>
+          <span class="impact-divider"></span>
+          <span class="impact-copy">can brighten<br /><strong>someone’s day</strong></span>
+          <span class="impact-pulse" aria-hidden="true"></span>
+        </div>
+        <p class="story-quote">“Food that might go to waste can become a moment of care.”</p>
       </section>
-      <p class="auth-footer">
-        One account per person or organization. Your credentials are private.
-        <span class="legal-links">
-          <a href="/privacy.html">Privacy</a>
-          <a href="/terms.html">Terms</a>
-        </span>
-      </p>
+
+      <section class="auth-panel" aria-label="Sign in to Goodfood">
+        <div class="auth-panel-top">
+          <a class="brand panel-brand" href="#" aria-label="Goodfood home">
+            <span class="brand-mark" aria-hidden="true">g</span>
+            <span>goodfood<span class="brand-period">.</span></span>
+          </a>
+          <span class="secure-note"><span aria-hidden="true">◆</span> A kinder community starts here</span>
+        </div>
+        <div class="auth-card" id="auth-card">
+          <div class="auth-heading">
+            <div class="eyebrow" id="auth-eyebrow">YOUR COMMUNITY FOOD NETWORK</div>
+            <h1 id="auth-title">Welcome back</h1>
+            <p class="auth-subtitle" id="auth-subtitle">Sign in to your own Goodfood account.</p>
+          </div>
+          <div class="auth-error hidden" id="auth-error" role="alert" aria-live="polite"></div>
+          <form id="auth-form">
+            <div class="form-field hidden" id="name-field">
+              <label for="auth-name">Your name or organization</label>
+              <input id="auth-name" name="name" autocomplete="organization" minlength="2" maxlength="80" />
+            </div>
+            <div class="form-field hidden" id="role-field">
+              <label for="auth-role">Account type</label>
+              <select id="auth-role" name="role">
+                <option value="ngo">NGO / recipient organization</option>
+                <option value="donor">Restaurant, resort, or food business</option>
+                <option value="individual">Individual food donor</option>
+              </select>
+            </div>
+            <div class="form-grid hidden" id="location-fields">
+              <div class="form-field">
+                <label for="auth-country">Country</label>
+                <input id="auth-country" name="country" autocomplete="country-name" minlength="2" maxlength="80" />
+              </div>
+              <div class="form-field">
+                <label for="auth-city">City</label>
+                <input id="auth-city" name="city" autocomplete="address-level2" minlength="2" maxlength="100" />
+              </div>
+            </div>
+            <div class="form-field auth-input-field">
+              <label for="auth-email">Email address</label>
+              <div class="input-shell"><span class="input-icon" aria-hidden="true">✉</span><input id="auth-email" name="email" type="email" autocomplete="email" required maxlength="254" placeholder="you@example.com" /></div>
+            </div>
+            <div class="form-field auth-input-field" id="password-field">
+              <div class="label-row"><label for="auth-password">Password</label><button class="text-link hidden" id="forgot-password" type="button">Forgot password?</button></div>
+              <div class="input-shell"><span class="input-icon input-lock" aria-hidden="true">◆</span><input id="auth-password" name="password" type="password" autocomplete="current-password" required minlength="10" maxlength="128" placeholder="Enter your password" /><button class="password-toggle" id="toggle-password" type="button" aria-label="Show password" aria-pressed="false">Show</button></div>
+              <small class="password-hint hidden" id="password-hint">Use at least 10 characters.</small>
+            </div>
+            <div class="auth-options" id="auth-options">
+              <label class="remember-option" for="remember-session"><input id="remember-session" type="checkbox" checked /><span class="custom-check" aria-hidden="true"></span><span>Remember me</span></label>
+              <span class="session-note">on this device</span>
+            </div>
+            <button class="primary-button auth-submit" id="auth-submit" type="submit"><span id="auth-submit-label">Sign in</span><span class="submit-arrow" aria-hidden="true">→</span></button>
+          </form>
+          <div class="auth-divider"><span>or continue with</span></div>
+          <button class="google-button" id="google-sign-in" type="button"><span class="google-mark" aria-hidden="true">G</span> Continue with Google</button>
+          <p class="auth-switch"><span id="auth-switch-prompt">New to Goodfood?</span> <button class="text-link" id="auth-switch" type="button">Create an account</button></p>
+          <p class="auth-admin-note">Admin accounts are created separately by the platform owner.</p>
+        </div>
+        <p class="auth-footer">By continuing, you agree to our <a href="/terms.html">Terms</a> and <a href="/privacy.html">Privacy Notice</a>.</p>
+      </section>
     </main>
 
     <div class="app-shell hidden" id="app-shell">

@@ -2,8 +2,34 @@ import { createClient } from "@supabase/supabase-js";
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabasePublishableKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+const rememberSessionKey = "goodfood-remember-session";
+const authStorage = {
+  getItem(key) {
+    if (localStorage.getItem(rememberSessionKey) === "false") {
+      const value = sessionStorage.getItem(key);
+      localStorage.removeItem(key);
+      return value;
+    }
+    const value = localStorage.getItem(key);
+    if (value !== null) sessionStorage.removeItem(key);
+    return value;
+  },
+  setItem(key, value) {
+    if (localStorage.getItem(rememberSessionKey) === "false") {
+      sessionStorage.setItem(key, value);
+      localStorage.removeItem(key);
+    } else {
+      localStorage.setItem(key, value);
+      sessionStorage.removeItem(key);
+    }
+  },
+  removeItem(key) {
+    localStorage.removeItem(key);
+    sessionStorage.removeItem(key);
+  }
+};
 const supabase = supabaseUrl && supabasePublishableKey
-  ? createClient(supabaseUrl, supabasePublishableKey, { auth: { flowType: "pkce" } })
+  ? createClient(supabaseUrl, supabasePublishableKey, { auth: { flowType: "pkce", storage: authStorage } })
   : null;
 
 const categories = ["Produce", "Bakery", "Prepared meals", "Dairy", "Other"];
@@ -94,6 +120,14 @@ function showAuthError(message) {
   const error = document.getElementById("auth-error");
   error.textContent = message;
   error.classList.remove("hidden");
+  error.classList.remove("success");
+}
+
+function showAuthSuccess(message) {
+  const notice = document.getElementById("auth-error");
+  notice.textContent = message;
+  notice.classList.remove("hidden");
+  notice.classList.add("success");
 }
 
 function updateShell() {
@@ -981,12 +1015,34 @@ function setAuthMode(mode) {
   state.authMode = mode;
   const isRegister = mode === "register";
   const isCompleteProfile = mode === "complete-profile";
-  document.getElementById("auth-title").textContent = isCompleteProfile ? "Finish your profile" : isRegister ? "Create your account" : "Welcome back";
+  const isRecovery = mode === "recover-password";
+  const isPasswordUpdate = mode === "update-password";
+  const isRecoveryFlow = isRecovery || isPasswordUpdate;
+  document.getElementById("auth-eyebrow").textContent = isCompleteProfile
+    ? "ONE LAST STEP"
+    : isRecoveryFlow
+      ? "ACCOUNT RECOVERY"
+      : isRegister
+        ? "JOIN THE GOODFOOD COMMUNITY"
+        : "YOUR COMMUNITY FOOD NETWORK";
+  document.getElementById("auth-title").textContent = isCompleteProfile
+    ? "Finish your profile"
+    : isRegister
+      ? "Create your account"
+      : isRecovery
+        ? "Reset your password"
+        : isPasswordUpdate
+          ? "Choose a new password"
+          : "Welcome back";
   document.getElementById("auth-subtitle").textContent = isCompleteProfile
     ? "Choose your account type and community location to continue."
     : isRegister
       ? "Create a separate account for yourself or your organization."
-      : "Sign in to your own Goodfood account.";
+      : isRecovery
+        ? "We’ll email you a secure link to reset your password."
+        : isPasswordUpdate
+          ? "Choose a new password to secure your Goodfood account."
+          : "Sign in to your own Goodfood account.";
   document.getElementById("name-field").classList.toggle("hidden", !isRegister && !isCompleteProfile);
   document.getElementById("role-field").classList.toggle("hidden", !isRegister && !isCompleteProfile);
   document.getElementById("location-fields").classList.toggle("hidden", !isRegister && !isCompleteProfile);
@@ -998,23 +1054,43 @@ function setAuthMode(mode) {
   document.getElementById("auth-country").value = isCompleteProfile ? state.profile?.country || "India" : "India";
   document.getElementById("auth-city").required = isRegister || isCompleteProfile;
   document.getElementById("auth-city").value = isCompleteProfile ? state.profile?.city || "" : "";
-  document.getElementById("auth-email").readOnly = isCompleteProfile;
-  document.getElementById("auth-email").value = isCompleteProfile ? state.user?.email || "" : "";
-  document.getElementById("auth-email").closest(".form-field").classList.toggle("hidden", isCompleteProfile);
-  document.getElementById("auth-password").closest(".form-field").classList.toggle("hidden", isCompleteProfile);
-  document.getElementById("auth-password").required = !isCompleteProfile;
-  document.getElementById("auth-password").autocomplete = isRegister ? "new-password" : "current-password";
+  document.getElementById("auth-email").readOnly = isCompleteProfile || isPasswordUpdate;
+  if (isCompleteProfile) document.getElementById("auth-email").value = state.user?.email || "";
+  document.getElementById("auth-email").closest(".form-field").classList.toggle("hidden", isCompleteProfile || isPasswordUpdate);
+  document.getElementById("password-field").classList.toggle("hidden", isCompleteProfile || isRecovery);
+  document.getElementById("auth-password").required = !isCompleteProfile && !isRecovery;
+  document.getElementById("auth-password").autocomplete = isRegister || isPasswordUpdate ? "new-password" : "current-password";
+  document.getElementById("auth-password").placeholder = isPasswordUpdate ? "Choose a new password" : "Enter your password";
+  document.querySelector("#password-field > .label-row > label").textContent = isPasswordUpdate ? "New password" : "Password";
   document.getElementById("password-hint").classList.toggle("hidden", !isRegister);
-  document.getElementById("auth-password").minLength = isRegister ? 10 : 1;
-  document.getElementById("auth-submit").textContent = isCompleteProfile ? "Save profile" : isRegister ? "Create account" : "Sign in";
+  document.getElementById("auth-password").minLength = isRegister || isPasswordUpdate ? 10 : 1;
+  document.getElementById("toggle-password").classList.toggle("hidden", isCompleteProfile || isRecovery);
+  document.getElementById("forgot-password").classList.toggle("hidden", state.authMode !== "login");
+  document.getElementById("auth-options").classList.toggle("hidden", isCompleteProfile || isRecoveryFlow);
+  document.getElementById("remember-session").checked = localStorage.getItem(rememberSessionKey) !== "false";
+  document.getElementById("auth-submit-label").textContent = isCompleteProfile
+    ? "Save profile"
+    : isRegister
+      ? "Create account"
+      : isRecovery
+        ? "Send reset link"
+        : isPasswordUpdate
+          ? "Update password"
+          : "Sign in";
   document.getElementById("auth-switch").closest(".auth-switch").classList.toggle("hidden", isCompleteProfile);
-  document.getElementById("google-sign-in").classList.toggle("hidden", isCompleteProfile);
-  document.querySelector(".auth-divider").classList.toggle("hidden", isCompleteProfile);
+  document.getElementById("google-sign-in").classList.toggle("hidden", isCompleteProfile || isRecoveryFlow);
+  document.querySelector(".auth-divider").classList.toggle("hidden", isCompleteProfile || isRecoveryFlow);
   document.querySelector(".auth-admin-note").classList.toggle("hidden", isCompleteProfile);
-  document.getElementById("auth-switch-prompt").textContent = isRegister ? "Already registered?" : "New to Goodfood?";
-  document.getElementById("auth-switch").textContent = isRegister ? "Sign in" : "Create an account";
+  document.getElementById("auth-switch-prompt").textContent = isRecoveryFlow
+    ? "Remembered your password?"
+    : isRegister
+      ? "Already registered?"
+      : "New to Goodfood?";
+  document.getElementById("auth-switch").textContent = isRecoveryFlow || isRegister ? "Back to sign in" : "Create an account";
   document.getElementById("auth-error").classList.add("hidden");
   document.getElementById("auth-error").classList.remove("success");
+  document.getElementById("auth-card").classList.remove("auth-card-enter");
+  requestAnimationFrame(() => document.getElementById("auth-card").classList.add("auth-card-enter"));
 }
 
 async function showAuthenticatedApp(user) {
@@ -1084,6 +1160,24 @@ document.getElementById("auth-switch").addEventListener("click", () => {
   setAuthMode(state.authMode === "login" ? "register" : "login");
 });
 
+document.getElementById("forgot-password").addEventListener("click", () => {
+  setAuthMode("recover-password");
+});
+
+document.getElementById("remember-session").addEventListener("change", (event) => {
+  localStorage.setItem(rememberSessionKey, event.currentTarget.checked ? "true" : "false");
+});
+
+document.getElementById("toggle-password").addEventListener("click", (event) => {
+  const input = document.getElementById("auth-password");
+  const button = event.currentTarget;
+  const showPassword = input.type === "password";
+  input.type = showPassword ? "text" : "password";
+  button.textContent = showPassword ? "Hide" : "Show";
+  button.setAttribute("aria-label", showPassword ? "Hide password" : "Show password");
+  button.setAttribute("aria-pressed", String(showPassword));
+});
+
 document.getElementById("auth-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   const formElement = event.currentTarget;
@@ -1093,7 +1187,21 @@ document.getElementById("auth-form").addEventListener("submit", async (event) =>
   document.getElementById("auth-error").classList.add("hidden");
   try {
     if (!supabase) throw new Error("Supabase is not configured. Add the required Supabase URL and publishable key.");
-    if (state.authMode === "complete-profile") {
+    if (state.authMode === "recover-password") {
+      const { error } = await supabase.auth.resetPasswordForEmail(String(form.get("email")).trim(), {
+        redirectTo: window.location.origin
+      });
+      if (error) throw error;
+      setAuthMode("login");
+      showAuthSuccess("If an account exists for that email, a secure password reset link is on its way.");
+    } else if (state.authMode === "update-password") {
+      const { error } = await supabase.auth.updateUser({ password: String(form.get("password")) });
+      if (error) throw error;
+      const { error: signOutError } = await supabase.auth.signOut({ scope: "local" });
+      if (signOutError) throw signOutError;
+      setAuthMode("login");
+      showAuthSuccess("Password updated. Sign in with your new password.");
+    } else if (state.authMode === "complete-profile") {
       const { data, error } = await supabase.rpc("complete_goodfood_profile", {
         profile_display_name: String(form.get("name")).trim(),
         profile_role: String(form.get("role")),
@@ -1180,7 +1288,13 @@ document.getElementById("topbar-sign-out").addEventListener("click", signOut);
 
 if (supabase) {
   supabase.auth.onAuthStateChange((event, session) => {
-    if (event === "SIGNED_OUT" || !session) {
+    if (event === "PASSWORD_RECOVERY" && session) {
+      queueMicrotask(() => {
+        document.getElementById("auth-screen").classList.remove("hidden");
+        document.getElementById("app-shell").classList.add("hidden");
+        setAuthMode("update-password");
+      });
+    } else if (event === "SIGNED_OUT" || !session) {
       showSignedOut();
     } else if (["INITIAL_SESSION", "SIGNED_IN", "USER_UPDATED", "TOKEN_REFRESHED"].includes(event)) {
       queueMicrotask(() => showAuthenticatedApp(session.user));

@@ -20,10 +20,17 @@ Money contributions are optional and support GoodFood platform operations; they 
 
 To enable the form after reviewing the operator, payment, refund, receipt, privacy, and regulatory policies:
 
-1. Apply `supabase/migrations/20261107100000_manual_money_contributions.sql` after the core Goodfood migration. The NGO food-needs migration is independent of manual contributions.
-2. Set `GOODFOOD_MANUAL_PAYMENT_INSTRUCTIONS` in the Node server runtime environment (for example Render). This is public payment information shown to donors, such as the official GoodFood UPI ID and transfer instructions. Never put passwords, PINs, card details, or private credentials in it.
-3. Ensure the server has `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_JWKS_URL`, and `SUPABASE_SERVICE_ROLE_KEY`. Keep the service-role key server-only and never prefix it with `VITE_`.
-4. Restart/redeploy the server and verify the instructions and submission UI using controlled test accounts.
+1. In the Supabase Dashboard, double-check the project name and project URL, then open **SQL Editor** and choose **New query**. Open `supabase/migrations/20261107100000_manual_money_contributions.sql` in this repository, copy its complete contents into the SQL Editor, and click **Run** as the project owner. Apply the core migration `supabase/migrations/20261106230000_goodfood_production.sql` first if it has not already been applied. This migration creates the contribution table and its access policies; it does not move or fabricate existing money records. The NGO food-needs migration is independent of manual contributions. Review the project and migration before running; do not paste service-role keys or payment credentials into SQL.
+2. Verify the table exists by running this read-only query in the same SQL Editor:
+
+   ```sql
+   select to_regclass('public.money_donations') as money_donations_table;
+   ```
+
+   It should return `money_donations`. If the migration reports an error, stop and resolve it before enabling payments; do not repeatedly run partial SQL.
+3. Set `GOODFOOD_MANUAL_PAYMENT_INSTRUCTIONS` in the Node server runtime environment (for example Render). This is public payment information shown to donors, such as the official GoodFood UPI ID and transfer instructions. Never put passwords, PINs, card details, or private credentials in it.
+4. Ensure the server has `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_JWKS_URL`, and `SUPABASE_SERVICE_ROLE_KEY`. Keep the service-role key server-only and never prefix it with `VITE_`.
+5. Restart/redeploy the server and verify the instructions and submission UI using controlled test accounts.
 
 The donor transfers funds outside GoodFood and submits the amount and transfer reference. The record remains **Awaiting review** until a platform administrator compares both against the official bank statement, adds an audit note, and submits the same reference found in that statement. Only this manual action changes the record to **Paid**. Donor-submitted details alone do not prove receipt. Rejected records are retained for audit and cannot be edited or approved later. Admin decisions use the server-verified Supabase `app_metadata.role = "admin"` claim; the browser cannot directly update the ledger.
 
@@ -40,6 +47,36 @@ The existing Node.js server serves the production Vite build and exposes `/healt
 3. Provide the Supabase settings in Render's environment. `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` must be available during the build; `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, and `SUPABASE_JWKS_URL` are server runtime settings. Configure `SUPABASE_SERVICE_ROLE_KEY` and `GOODFOOD_MANUAL_PAYMENT_INSTRUCTIONS` only if enabling manual contributions.
 4. After Render assigns the site URL, set it as the Supabase Auth site URL and add it to the allowed redirect URLs. Test email confirmation, sign-in, Google sign-in (if enabled), and password/account flows on the deployed HTTPS origin.
 5. Create or confirm the operator's GoodFood account and verify its email. From a trusted local machine, set `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` privately in `.env.local`, then run `npm run admin:promote -- your-confirmed-email@example.com`. The command updates only the matching confirmed account's trusted `app_metadata.role` to `admin`; it does not create, display, or change a password. Sign out and back in to GoodFood after promotion. Never expose the service-role key to the browser or let users grant themselves admin access.
+
+## Bulk admin setup (Windows)
+
+Use this when promoting multiple existing accounts. Each person must already have a GoodFood account and a confirmed email.
+
+1. In the project folder, create or update `.env.local` with the correct project URL and the service-role key from that Supabase project's API settings. Keep the key private: it must not start with `VITE_`, be added to Render's frontend build variables, or be shared in chat.
+2. Open Notepad and create `admins.txt` in the project folder. Put one account email on each line, for example:
+
+   ```text
+   admin1@example.com
+   admin2@example.com
+   ```
+
+   Replace the example addresses with the actual confirmed accounts. The file is ignored by Git.
+3. Open PowerShell in the project folder and preview:
+
+   ```powershell
+   npm run admin:promote:bulk -- --file admins.txt --dry-run
+   ```
+
+   Resolve any missing or unconfirmed-account errors before continuing. A dry run does not change any roles.
+4. When the preview is correct, apply the role updates:
+
+   ```powershell
+   npm run admin:promote:bulk -- --file admins.txt --apply
+   ```
+
+5. Each promoted admin should sign out and sign back in to refresh the role claim. Confirm the admin page/actions appear for those accounts.
+
+The script uses the Supabase Auth Admin API and changes only the trusted `app_metadata.role`; it does not change passwords or database records. It verifies all listed accounts before starting updates. If an update fails mid-run, earlier successful promotions are not rolled back; the error identifies which succeeded. Do not try to grant these roles by editing Supabase's internal `auth.users` table in SQL.
 
 Choose a paid, always-on Render instance and a Supabase plan appropriate for the expected activity before accepting time-sensitive real pickup requests. Free hosting/database tiers can sleep, pause, or have service limits; they are suitable for a preview, not dependable food handoffs. A host-provided URL can be used initially; a custom domain can be connected later.
 

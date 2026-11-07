@@ -7,7 +7,8 @@
     "build": "vite build",
     "test": "node --test tests/server.test.js tests/manual-contributions.test.js tests/admin-provisioning.test.js",
     "start": "node --env-file-if-exists=.env.local server.js",
-    "admin:promote": "node --env-file-if-exists=.env.local scripts/promote-admin.js"
+    "admin:promote": "node --env-file-if-exists=.env.local scripts/promote-admin.js",
+    "admin:promote:bulk": "node --env-file-if-exists=.env.local scripts/promote-admins.js"
   },
   "dependencies": {
     "@supabase/server": "^1.9.2",

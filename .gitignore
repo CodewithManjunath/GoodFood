@@ -3,5 +3,6 @@ data/
 .env
 .env.*
 !.env.example
+admins.txt
 dist/
 youpi-pg/

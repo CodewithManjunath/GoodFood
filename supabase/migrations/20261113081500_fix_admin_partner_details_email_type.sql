@@ -1,5 +1,7 @@
 begin;
 
+drop function if exists public.admin_goodfood_partner_details();
+
 create or replace function public.admin_goodfood_partner_details()
 returns table (
   id uuid,
@@ -49,5 +51,8 @@ begin
     order by profile.created_at desc;
 end;
 $$;
+
+revoke all on function public.admin_goodfood_partner_details() from public, anon;
+grant execute on function public.admin_goodfood_partner_details() to authenticated;
 
 commit;

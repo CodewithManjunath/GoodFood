@@ -144,7 +144,7 @@ begin
       profile.is_verified,
       profile.is_suspended,
       profile.created_at,
-      coalesce(auth_user.email, ''),
+      coalesce(auth_user.email, '')::text,
       coalesce(details.state, ''),
       coalesce(details.phone, ''),
       coalesce(details.organization_address, ''),

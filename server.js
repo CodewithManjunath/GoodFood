@@ -127,6 +127,14 @@ function normalizeReference(value) {
   return value.trim().replace(/\s+/g, " ").toUpperCase();
 }
 
+function isValidContributionReceiptPath(value, userId) {
+  if (typeof value !== "string" || typeof userId !== "string") return false;
+  const prefix = `${userId}/`;
+  if (!value.startsWith(prefix)) return false;
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.(?:jpg|png|webp)$/
+    .test(value.slice(prefix.length));
+}
+
 async function submitManualContribution(request, response) {
   try {
     if (!getManualContributionConfig().enabled) {
@@ -137,7 +145,7 @@ async function submitManualContribution(request, response) {
     if (!body || typeof body !== "object" || Array.isArray(body)) {
       throw new HttpError(400, "A contribution amount and transfer reference are required.");
     }
-    const { amount, donorReference } = body;
+    const { amount, donorReference, receiptPath = null } = body;
     const amountPaise = parseDonationAmount(amount);
     if (amountPaise === null) {
       throw new HttpError(400, "Enter a donation amount of at least ₹1.00 with up to two decimal places.");
@@ -148,6 +156,9 @@ async function submitManualContribution(request, response) {
     const reference = donorReference.trim();
     if (!/^[\p{L}\p{N}][\p{L}\p{N} ./_-]{2,119}$/u.test(reference)) {
       throw new HttpError(400, "Enter a valid transfer reference (3–120 letters, numbers, spaces, or . / _ -).");
+    }
+    if (receiptPath !== null && !isValidContributionReceiptPath(receiptPath, user.id)) {
+      throw new HttpError(400, "The receipt image path is invalid.");
     }
 
     const client = await getServiceClient();
@@ -171,6 +182,7 @@ async function submitManualContribution(request, response) {
         amount_paise: amountPaise,
         currency: "INR",
         donor_reference: reference,
+        receipt_path: receiptPath,
         status: "submitted"
       })
       .select("id,order_id,amount_paise,status,donor_reference,created_at")
@@ -180,6 +192,9 @@ async function submitManualContribution(request, response) {
         throw new HttpError(409, "This transfer reference has already been submitted. Contact GoodFood support if you believe that is an error.");
       }
       console.error("Could not create the money donation record.", insertError);
+      if (insertError.code === "42703" || insertError.code === "PGRST204") {
+        throw new HttpError(503, "Contribution records are not ready. Apply the GoodFood manual-contribution and receipt-image migrations.");
+      }
       throw new HttpError(503, "Contribution records are not ready. Apply the GoodFood manual-contribution migration.");
     }
     return sendJson(response, 201, { contribution });
@@ -363,7 +378,7 @@ async function serve(request, response) {
     "X-Content-Type-Options": "nosniff",
     "X-Frame-Options": "DENY",
     "Referrer-Policy": "strict-origin-when-cross-origin",
-    "Content-Security-Policy": "default-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; script-src 'self'; connect-src 'self' https://*.supabase.co wss://*.supabase.co; frame-src https://*.supabase.co; img-src 'self' data: https://*.googleusercontent.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self' https://*.supabase.co"
+    "Content-Security-Policy": "default-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; script-src 'self'; connect-src 'self' https://*.supabase.co wss://*.supabase.co; frame-src https://*.supabase.co; img-src 'self' blob: data: https://*.googleusercontent.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self' https://*.supabase.co"
   });
   response.end(request.method === "HEAD" ? undefined : content);
 }
@@ -399,5 +414,6 @@ module.exports = {
   startServer,
   parseDonationAmount,
   isPlatformAdmin,
-  normalizeReference
+  normalizeReference,
+  isValidContributionReceiptPath
 };

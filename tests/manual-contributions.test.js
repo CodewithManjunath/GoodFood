@@ -2,6 +2,7 @@ const assert = require("node:assert/strict");
 const test = require("node:test");
 const {
   isPlatformAdmin,
+  isValidContributionReceiptPath,
   normalizeReference,
   parseDonationAmount
 } = require("../server.js");
@@ -25,4 +26,25 @@ test("manual review uses normalized references and trusted app metadata only", (
   assert.equal(isPlatformAdmin({ user_metadata: { role: "admin" } }), false);
   assert.equal(isPlatformAdmin({ app_metadata: { role: "donor" } }), false);
   assert.equal(isPlatformAdmin(null), false);
+});
+
+test("receipt paths are restricted to the contributor and supported image types", () => {
+  const userId = "123e4567-e89b-42d3-a456-426614174000";
+  assert.equal(
+    isValidContributionReceiptPath(`${userId}/123e4567-e89b-42d3-a456-426614174001.webp`, userId),
+    true
+  );
+  assert.equal(
+    isValidContributionReceiptPath("123e4567-e89b-42d3-a456-426614174002/123e4567-e89b-42d3-a456-426614174001.png", userId),
+    false
+  );
+  assert.equal(
+    isValidContributionReceiptPath(`${userId}/123e4567-e89b-42d3-a456-426614174001.svg`, userId),
+    false
+  );
+  assert.equal(
+    isValidContributionReceiptPath(`${userId}/123e4567-e89b-42d3-a456-426614174001.JPG`, userId),
+    false
+  );
+  assert.equal(isValidContributionReceiptPath(null, userId), false);
 });

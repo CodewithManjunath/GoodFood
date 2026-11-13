@@ -53,6 +53,11 @@ test("production server exposes health and static routes, and restricts API meth
   assert.match(terms.headers.get("content-type"), /text\/html/);
   assert.match(await terms.text(), /GoodFood Terms of Service/);
 
+  const guide = await fetch(`${baseUrl}/guide.html`);
+  assert.equal(guide.status, 200);
+  assert.match(guide.headers.get("content-type"), /text\/html/);
+  assert.match(await guide.text(), /Step-by-step user guide/);
+
   const legalStyles = await fetch(`${baseUrl}/legal.css`);
   assert.equal(legalStyles.status, 200);
   assert.match(legalStyles.headers.get("content-type"), /text\/css/);

@@ -8,11 +8,15 @@ Requires Node.js 22 or newer and the Goodfood Supabase project.
 
 1. Copy `.env.example` to `.env.local`.
 2. Set `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, and `SUPABASE_JWKS_URL`. The publishable key is intended for the browser; never expose a Supabase secret/service-role key.
-3. In the Supabase SQL Editor, run `supabase/migrations/20261106230000_goodfood_production.sql` and then `supabase/migrations/20261107110000_ngo_food_needs.sql` as the project owner. The app requires these tables, role checks, RPCs, and row-level security policies.
+3. In the Supabase SQL Editor, run `supabase/migrations/20261106230000_goodfood_production.sql` and then `supabase/migrations/20261107110000_ngo_food_needs.sql` as the project owner. For manual contributions, also run `supabase/migrations/20261107100000_manual_money_contributions.sql` followed by `supabase/migrations/20261107120000_money_contribution_receipts.sql`. The app requires the applicable tables, storage bucket, role checks, RPCs, and row-level security policies.
 4. Configure Supabase Auth: enable email/password; configure Google OAuth if desired; set the production site's URL and allowed redirect URLs. Keep the Supabase callback URL in the Google OAuth client's authorized redirect URIs.
 5. Run `npm ci`, `npm run dev`, and open the local Vite URL shown in the terminal. Run `npm test` for the Node server route and manual-contribution validation tests and `npm run build` for a production build.
 
 The migration creates a private profile record for every Auth user, shared donation and request tables, and transactional functions for requesting, confirming, declining, withdrawing, and completing a pickup. The database enforces ownership and partner roles independently of the browser. Exact pickup instructions are stored with a request and are readable only by the donor, requesting NGO, and platform administrator.
+
+## Using the app
+
+Open the in-app **Need help?** dialog or visit the [step-by-step user guide](public/guide.html) for instructions on posting a food need, requesting and offering food, confirming pickup requests, and submitting or reviewing a manual money contribution.
 
 ## Manual money contributions
 
@@ -20,7 +24,7 @@ Money contributions are optional and support GoodFood platform operations; they 
 
 To enable the form after reviewing the operator, payment, refund, receipt, privacy, and regulatory policies:
 
-1. In the Supabase Dashboard, double-check the project name and project URL, then open **SQL Editor** and choose **New query**. Open `supabase/migrations/20261107100000_manual_money_contributions.sql` in this repository, copy its complete contents into the SQL Editor, and click **Run** as the project owner. Apply the core migration `supabase/migrations/20261106230000_goodfood_production.sql` first if it has not already been applied. This migration creates the contribution table and its access policies; it does not move or fabricate existing money records. The NGO food-needs migration is independent of manual contributions. Review the project and migration before running; do not paste service-role keys or payment credentials into SQL.
+1. In the Supabase Dashboard, double-check the project name and project URL, then open **SQL Editor** and choose **New query**. Run `supabase/migrations/20261107100000_manual_money_contributions.sql`, then run `supabase/migrations/20261107120000_money_contribution_receipts.sql`, as the project owner. Apply the core migration `supabase/migrations/20261106230000_goodfood_production.sql` first if it has not already been applied. The second migration adds a private receipt-image bucket and contributor/admin-only access policies; it does not move or fabricate existing money records. The NGO food-needs migration is independent of manual contributions. Review each migration before running; do not paste service-role keys or payment credentials into SQL.
 2. Verify the table exists by running this read-only query in the same SQL Editor:
 
    ```sql
@@ -32,7 +36,7 @@ To enable the form after reviewing the operator, payment, refund, receipt, priva
 4. Ensure the server has `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_JWKS_URL`, and `SUPABASE_SERVICE_ROLE_KEY`. Keep the service-role key server-only and never prefix it with `VITE_`.
 5. Restart/redeploy the server and verify the instructions and submission UI using controlled test accounts.
 
-The donor transfers funds outside GoodFood and submits the amount and transfer reference. The record remains **Awaiting review** until a platform administrator compares both against the official bank statement, adds an audit note, and submits the same reference found in that statement. Only this manual action changes the record to **Paid**. Donor-submitted details alone do not prove receipt. Rejected records are retained for audit and cannot be edited or approved later. Admin decisions use the server-verified Supabase `app_metadata.role = "admin"` claim; the browser cannot directly update the ledger.
+The donor transfers funds outside GoodFood and submits the amount and transfer reference, optionally attaching a JPG, PNG, or WebP receipt image up to 5 MB. Images are stored privately and can only be viewed by the contributor and platform administrators; the donor should redact account numbers and other sensitive details first. The record remains **Awaiting review** until a platform administrator compares the amount and reference against the official bank statement, adds an audit note, and submits the same reference found in that statement. A receipt image is supporting material, not proof of settlement. Only this manual action changes the record to **Paid**. Donor-submitted details alone do not prove receipt. Rejected records are retained for audit and cannot be edited or approved later. Admin decisions use the server-verified Supabase `app_metadata.role = "admin"` claim; the browser cannot directly update the ledger.
 
 Only publish payment instructions for an account authorized to receive GoodFood contributions. Manual review is an operational human check, not an independent bank API or a guarantee of settlement finality; define review access, dual-control/accounting procedures, refunds, and reconciliation with qualified advisers before public launch.
 
@@ -104,4 +108,4 @@ The public [Privacy Notice](https://goodfood-font.onrender.com/privacy.html) and
 
 ## Not yet provided
 
-The core shared listing and request lifecycle is implemented. Email/SMS or push notifications, in-app chat, document upload, automated partner/license verification, map-distance search, multilingual content, and automated stale-listing cleanup are not implemented. The notification control explicitly reports that notifications are unavailable. Do not promise those features to users until they are added and tested.
+The core shared listing and request lifecycle is implemented: verified NGOs can request listed food, donors can confirm or decline requests, and NGOs can mark confirmed pickups collected. Email/SMS or push notifications, in-app chat, partner-verification document upload, automated partner/license verification, map-distance search, multilingual content, and automated stale-listing cleanup are not implemented. The notification control explicitly reports that notifications are unavailable. Do not promise those features to users until they are added and tested.

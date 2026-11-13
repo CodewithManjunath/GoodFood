@@ -33,6 +33,7 @@ const supabase = supabaseUrl && supabasePublishableKey
   : null;
 
 const categories = ["Produce", "Bakery", "Prepared meals", "Dairy", "Other"];
+const contributionReceiptsBucket = "goodfood-money-receipts";
 const roles = {
   ngo: "NGO / recipient organization",
   donor: "Food donor",
@@ -59,7 +60,8 @@ const state = {
   category: "All categories",
   saved: [],
   toastTimer: null,
-  loadingUserId: null
+  loadingUserId: null,
+  receiptObjectUrl: null
 };
 
 const root = document.getElementById("view-root");
@@ -255,6 +257,7 @@ function moneyDonationFromRow(row) {
     verifiedReference: row.verified_reference,
     reviewNote: row.review_note,
     reviewedAt: row.reviewed_at,
+    receiptPath: row.receipt_path || null,
     donorName: row.donor?.display_name || null,
     status: statuses[row.status] || "Unknown",
     rawStatus: row.status
@@ -307,14 +310,14 @@ async function loadWorkspaceData() {
   state.moneyDonations = [];
   const moneyDonationsResult = await supabase.from("money_donations")
     .select(state.role === "admin"
-      ? "id,order_id,amount_paise,status,donor_reference,verified_reference,verified_amount_paise,review_note,reviewed_at,created_at,donor:profiles!money_donations_donor_id_fkey(display_name)"
-      : "id,order_id,amount_paise,status,donor_reference,verified_reference,verified_amount_paise,review_note,reviewed_at,created_at")
+      ? "id,order_id,amount_paise,status,donor_reference,verified_reference,verified_amount_paise,review_note,reviewed_at,receipt_path,created_at,donor:profiles!money_donations_donor_id_fkey(display_name)"
+      : "id,order_id,amount_paise,status,donor_reference,verified_reference,verified_amount_paise,review_note,reviewed_at,receipt_path,created_at")
     .order("created_at", { ascending: false });
   if (moneyDonationsResult.error) {
-    if (["42P01", "PGRST205"].includes(moneyDonationsResult.error.code)) {
-      console.error("The money donations migration is not available.", moneyDonationsResult.error);
+    if (["42P01", "42703", "PGRST205", "PGRST204"].includes(moneyDonationsResult.error.code)) {
+      console.error("The money contribution or receipt-image migration is not available.", moneyDonationsResult.error);
       state.manualContributionsEnabled = false;
-      state.manualContributionError = "Manual contributions are unavailable until the contribution database migration is applied.";
+      state.manualContributionError = "Manual contributions are unavailable until the money contribution and receipt-image database migrations are applied.";
     } else {
       throw moneyDonationsResult.error;
     }
@@ -369,17 +372,50 @@ async function submitManualContribution(event) {
   const form = event.currentTarget;
   const submit = form.querySelector('[type="submit"]');
   const formData = new FormData(form);
+  const receiptFile = formData.get("receiptImage");
+  if (receiptFile?.size) {
+    const acceptedTypes = ["image/jpeg", "image/png", "image/webp"];
+    if (!acceptedTypes.includes(receiptFile.type)) {
+      setToast("Choose a JPG, PNG, or WebP receipt image.", true);
+      return;
+    }
+    if (receiptFile.size > 5 * 1024 * 1024) {
+      setToast("Receipt images must be 5 MB or smaller.", true);
+      return;
+    }
+  }
   submit.disabled = true;
+  let uploadedReceiptPath = null;
   try {
+    if (receiptFile?.size) {
+      const extensions = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp" };
+      uploadedReceiptPath = `${state.user.id}/${crypto.randomUUID()}.${extensions[receiptFile.type]}`;
+      const { error } = await supabase.storage
+        .from(contributionReceiptsBucket)
+        .upload(uploadedReceiptPath, receiptFile, { contentType: receiptFile.type, upsert: false });
+      if (error) throw error;
+    }
     await postAuthenticatedJson("/api/contributions/manual/submit", {
       amount: String(formData.get("amount")),
-      donorReference: String(formData.get("donorReference"))
+      donorReference: String(formData.get("donorReference")),
+      receiptPath: uploadedReceiptPath
     });
+    uploadedReceiptPath = null;
     await loadWorkspaceData();
     render();
     setToast("Transfer submitted for manual review. It will show as paid only after an administrator checks the bank statement.");
   } catch (error) {
     console.error("Could not submit manual contribution.", error);
+    if (uploadedReceiptPath) {
+      try {
+        const { error: cleanupError } = await supabase.storage
+          .from(contributionReceiptsBucket)
+          .remove([uploadedReceiptPath]);
+        if (cleanupError) console.error("Could not remove an unlinked contribution receipt.", cleanupError);
+      } catch (cleanupError) {
+        console.error("Could not remove an unlinked contribution receipt.", cleanupError);
+      }
+    }
     setToast(error.message || "Could not submit the transfer for review.", true);
   } finally {
     submit.disabled = false;
@@ -415,10 +451,12 @@ function openManualContributionReview(id) {
   showModal(`<div class="eyebrow">MANUAL BANK REVIEW</div><h2 id="modal-title">Review contribution</h2>
     <p class="modal-intro">Compare the donor’s amount and transfer reference with the official bank statement outside GoodFood. A submitted reference is not proof of payment.</p>
     <div class="confirm-box"><strong>${escapeHtml(formatRupees(contribution.amountPaise))}</strong><br>Donor reference: ${escapeHtml(contribution.donorReference)}<br>Submission: ${escapeHtml(new Date(contribution.createdAt).toLocaleString())}</div>
+    <div id="receipt-preview" class="receipt-preview" aria-live="polite">${contribution.receiptPath ? "Loading private receipt image…" : "No receipt image was attached."}</div>
     <form id="manual-review-form"><div class="form-field"><label for="verified-reference">Reference from bank statement (required to mark paid)</label><input id="verified-reference" name="verifiedReference" maxlength="120" value="${escapeHtml(contribution.donorReference)}" /></div>
       <div class="form-field"><label for="verified-amount">Amount shown in bank statement (INR)</label><input id="verified-amount" name="verifiedAmount" type="number" min="1.00" max="999999999.99" step="0.01" inputmode="decimal" /></div>
       <div class="form-field"><label for="review-note">Review note (required)</label><textarea id="review-note" name="reviewNote" required minlength="5" maxlength="1000" placeholder="Record what statement entry you checked, without adding sensitive account details."></textarea></div>
       <div class="modal-actions"><button type="button" class="secondary-button" id="cancel-modal">Cancel</button><button type="button" class="secondary-button" id="reject-contribution">Reject</button><button type="submit" class="primary-button">Mark paid</button></div></form>`);
+  if (contribution.receiptPath) loadContributionReceipt(contribution);
   document.getElementById("cancel-modal").addEventListener("click", closeModal);
   document.getElementById("reject-contribution").addEventListener("click", async (event) => {
     const form = document.getElementById("manual-review-form");
@@ -436,6 +474,39 @@ function openManualContributionReview(id) {
     button.disabled = true;
     if (!await reviewManualContribution(id, "paid")) button.disabled = false;
   });
+}
+
+function openContributionReceipt(id) {
+  const contribution = state.moneyDonations.find((item) => item.id === id);
+  if (!contribution?.receiptPath || state.role !== "admin") return;
+  showModal(`<div class="eyebrow">PRIVATE TRANSFER RECEIPT</div><h2 id="modal-title">Contribution receipt</h2>
+    <p class="modal-intro">This image is private to the contributor and platform administrators. A receipt image does not independently verify settlement.</p>
+    <div id="receipt-preview" class="receipt-preview" aria-live="polite">Loading private receipt image…</div>
+    <div class="modal-actions"><button type="button" class="primary-button" id="cancel-modal">Close</button></div>`);
+  document.getElementById("cancel-modal").addEventListener("click", closeModal);
+  loadContributionReceipt(contribution);
+}
+
+async function loadContributionReceipt(contribution) {
+  const preview = document.getElementById("receipt-preview");
+  try {
+    const { data, error } = await supabase.storage
+      .from(contributionReceiptsBucket)
+      .download(contribution.receiptPath);
+    if (error) throw error;
+    const objectUrl = URL.createObjectURL(data);
+    if (document.getElementById("receipt-preview") !== preview) {
+      URL.revokeObjectURL(objectUrl);
+      return;
+    }
+    state.receiptObjectUrl = objectUrl;
+    preview.innerHTML = `<img src="${escapeHtml(objectUrl)}" alt="Private contribution receipt image" />`;
+  } catch (error) {
+    console.error("Could not load the private contribution receipt.", error);
+    if (document.getElementById("receipt-preview") === preview) {
+      preview.textContent = "The private receipt image could not be loaded. Check the storage migration and access policies.";
+    }
+  }
 }
 
 function showLoadError(error) {
@@ -750,7 +821,7 @@ function impactView() {
     <div class="hero-card"><div class="hero-symbol">✳</div><div class="hero-copy"><strong>Small acts make a real difference.</strong><p>Impact numbers count listings and pickups; food quantities and environmental effects are not independently verified.</p></div></div>
     <section class="money-donation-card" aria-labelledby="money-donation-title"><div class="eyebrow">SUPPORT THE PLATFORM</div><h2 id="money-donation-title">Make a money contribution</h2><p class="subtitle">Contributions support GoodFood operations and are not directed to a specific NGO. Transfers are reviewed manually; there is no payment gateway or automatic settlement confirmation.</p>
       ${state.manualContributionsEnabled ? `<div class="confirm-box money-payment-instructions"><strong>Payment instructions</strong><br><span>${escapeHtml(state.manualPaymentInstructions)}</span></div><p class="money-donation-note">Transfer the amount using the instructions above, then submit the reference shown by your payment app. Do not submit until the transfer is complete. An administrator will compare the amount and reference against the bank statement. Only then can it be marked paid.</p>
-      <form id="money-donation-form" class="money-donation-form manual-contribution-form"><div class="form-field"><label for="money-donation-amount">Amount (INR)</label><input id="money-donation-amount" name="amount" type="number" min="1.00" max="999999999.99" step="0.01" inputmode="decimal" placeholder="e.g. 250.00" required /></div><div class="form-field"><label for="donor-reference">UPI / bank transfer reference</label><input id="donor-reference" name="donorReference" type="text" minlength="3" maxlength="120" autocomplete="off" placeholder="Reference/UTR from your payment app" required /></div><button class="primary-button" type="submit">Submit for review</button></form><p class="money-donation-note">Do not enter passwords, PINs, account numbers, or card details. GoodFood does not currently issue tax-deductible receipts.</p>` : `<div class="confirm-box">${escapeHtml(state.manualContributionError || "Manual contributions are not configured yet. Please check back later.")}</div>`}
+      <form id="money-donation-form" class="money-donation-form manual-contribution-form"><div class="form-field"><label for="money-donation-amount">Amount (INR)</label><input id="money-donation-amount" name="amount" type="number" min="1.00" max="999999999.99" step="0.01" inputmode="decimal" placeholder="e.g. 250.00" required /></div><div class="form-field"><label for="donor-reference">UPI / bank transfer reference</label><input id="donor-reference" name="donorReference" type="text" minlength="3" maxlength="120" autocomplete="off" placeholder="Reference/UTR from your payment app" required /></div><div class="form-field"><label for="receipt-image">Transfer receipt image (optional, JPG/PNG/WebP, max 5 MB)</label><input id="receipt-image" name="receiptImage" type="file" accept="image/jpeg,image/png,image/webp" /></div><button class="primary-button" type="submit">Submit for review</button></form><p class="money-donation-note">Receipt images are private and visible only to you and platform administrators. Redact account numbers and other sensitive details first. Do not enter passwords, PINs, or card details. GoodFood does not currently issue tax-deductible receipts.</p>` : `<div class="confirm-box">${escapeHtml(state.manualContributionError || "Manual contributions are not configured yet. Please check back later.")}</div>`}
     </section></div>`;
   document.getElementById("money-donation-form")?.addEventListener("submit", submitManualContribution);
 }
@@ -767,7 +838,7 @@ function adminView() {
     <div class="section-heading"><div><h2>Donation listings</h2><p>Remove unsafe, expired, or inappropriate offers.</p></div></div>
     <div class="activity-list">${state.donations.length ? state.donations.map((item) => `<div class="activity-row"><span class="activity-text"><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(item.donor)} · ${escapeHtml(item.city)} · ${escapeHtml(item.quantity)} · ${escapeHtml(item.status)}</small></span>${item.status !== "Withdrawn" && item.status !== "Collected" ? `<button class="table-action" data-admin-remove="${escapeHtml(item.id)}">Remove listing</button>` : `<span class="status-pill">${escapeHtml(item.status)}</span>`}</div>`).join("") : `<div class="empty-state"><strong>No listings to review</strong></div>`}</div>
     <div class="section-heading"><div><h2>Manual money contributions</h2><p>Compare submitted amounts and references with the official bank statement before deciding. Never mark paid based only on the donor’s submission.</p></div></div>
-    <div class="activity-list">${state.moneyDonations.length ? state.moneyDonations.map((item) => `<div class="activity-row"><span class="activity-text"><strong>${escapeHtml(formatRupees(item.amountPaise))} · ${escapeHtml(item.donorName || "GoodFood member")}</strong><small>Submitted ${escapeHtml(new Date(item.createdAt).toLocaleString())} · Donor reference: ${escapeHtml(item.donorReference)}${item.reviewNote ? `<br>Review note: ${escapeHtml(item.reviewNote)}` : ""}${item.verifiedReference ? `<br>Bank statement reference: ${escapeHtml(item.verifiedReference)}` : ""}${item.verifiedAmountPaise !== null && item.verifiedAmountPaise !== undefined ? `<br>Bank statement amount: ${escapeHtml(formatRupees(item.verifiedAmountPaise))}` : ""}</small></span>${item.rawStatus === "submitted" ? `<button class="table-action" data-review-contribution="${escapeHtml(item.id)}">Review</button>` : `<span class="status-pill">${escapeHtml(item.status)}</span>`}</div>`).join("") : `<div class="empty-state"><strong>No contributions submitted</strong></div>`}</div>
+    <div class="activity-list">${state.moneyDonations.length ? state.moneyDonations.map((item) => `<div class="activity-row"><span class="activity-text"><strong>${escapeHtml(formatRupees(item.amountPaise))} · ${escapeHtml(item.donorName || "GoodFood member")}</strong><small>Submitted ${escapeHtml(new Date(item.createdAt).toLocaleString())} · Donor reference: ${escapeHtml(item.donorReference)}${item.receiptPath ? "<br>Private receipt image attached" : ""}${item.reviewNote ? `<br>Review note: ${escapeHtml(item.reviewNote)}` : ""}${item.verifiedReference ? `<br>Bank statement reference: ${escapeHtml(item.verifiedReference)}` : ""}${item.verifiedAmountPaise !== null && item.verifiedAmountPaise !== undefined ? `<br>Bank statement amount: ${escapeHtml(formatRupees(item.verifiedAmountPaise))}` : ""}</small></span>${item.rawStatus === "submitted" ? `<button class="table-action" data-review-contribution="${escapeHtml(item.id)}">Review</button>` : `<span class="status-pill">${escapeHtml(item.status)}</span>`}${item.receiptPath ? `<button class="table-action" data-view-receipt="${escapeHtml(item.id)}">View receipt</button>` : ""}</div>`).join("") : `<div class="empty-state"><strong>No contributions submitted</strong></div>`}</div>
     <p class="privacy-note">Admin access requires Supabase app metadata set by the project owner. Profile emails and private pickup instructions are not included in this review screen.</p></div>`;
   root.querySelectorAll("[data-review-profile]").forEach((button) => {
     button.addEventListener("click", () => reviewMember(
@@ -788,6 +859,9 @@ function adminView() {
   });
   root.querySelectorAll("[data-review-contribution]").forEach((button) => {
     button.addEventListener("click", () => openManualContributionReview(button.dataset.reviewContribution));
+  });
+  root.querySelectorAll("[data-view-receipt]").forEach((button) => {
+    button.addEventListener("click", () => openContributionReceipt(button.dataset.viewReceipt));
   });
 }
 
@@ -851,11 +925,19 @@ function setView(view) {
 }
 
 function showModal(content) {
+  if (state.receiptObjectUrl) {
+    URL.revokeObjectURL(state.receiptObjectUrl);
+    state.receiptObjectUrl = null;
+  }
   document.getElementById("modal-content").innerHTML = content;
   document.getElementById("modal-backdrop").classList.remove("hidden");
 }
 
 function closeModal() {
+  if (state.receiptObjectUrl) {
+    URL.revokeObjectURL(state.receiptObjectUrl);
+    state.receiptObjectUrl = null;
+  }
   document.getElementById("modal-backdrop").classList.add("hidden");
 }
 
@@ -1087,7 +1169,7 @@ document.getElementById("privacy-link").addEventListener("click", () => {
   document.getElementById("cancel-modal").addEventListener("click", closeModal);
 });
 document.getElementById("help-button").addEventListener("click", () => {
-  showModal(`<div class="eyebrow">GOODFOOD SUPPORT</div><h2 id="modal-title">Need help?</h2><p class="modal-intro">For food-safety concerns or account support, contact the Goodfood platform administrator using the support contact provided for your community.</p><div class="modal-actions"><button class="primary-button" id="cancel-modal">Close</button></div>`);
+  showModal(`<div class="eyebrow">GOODFOOD SUPPORT</div><h2 id="modal-title">Need help?</h2><p class="modal-intro">For help requesting food, accepting a pickup, or contributing money, read the <a href="/guide.html">step-by-step user guide</a>.</p><p class="modal-intro">For food-safety concerns or account support, contact the Goodfood platform administrator using the support contact provided for your community.</p><div class="modal-actions"><button class="primary-button" id="cancel-modal">Close</button></div>`);
   document.getElementById("cancel-modal").addEventListener("click", closeModal);
 });
 document.getElementById("profile-button").addEventListener("click", () => {

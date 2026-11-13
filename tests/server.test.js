@@ -1,5 +1,6 @@
 const assert = require("node:assert/strict");
 const { once } = require("node:events");
+const http = require("node:http");
 const test = require("node:test");
 const { startServer } = require("../server.js");
 
@@ -7,7 +8,6 @@ test("production server exposes health and static routes, and restricts API meth
   const configNames = [
     "SUPABASE_URL",
     "SUPABASE_PUBLISHABLE_KEY",
-    "SUPABASE_JWKS_URL",
     "SUPABASE_SERVICE_ROLE_KEY",
     "GOODFOOD_MANUAL_PAYMENT_INSTRUCTIONS"
   ];
@@ -83,7 +83,6 @@ test("production server exposes health and static routes, and restricts API meth
 
   process.env.SUPABASE_URL = "https://example.supabase.co";
   process.env.SUPABASE_PUBLISHABLE_KEY = "test-publishable-key";
-  process.env.SUPABASE_JWKS_URL = "https://example.supabase.co/auth/v1/.well-known/jwks.json";
   process.env.SUPABASE_SERVICE_ROLE_KEY = "test-service-role-key";
   process.env.GOODFOOD_MANUAL_PAYMENT_INSTRUCTIONS = "Official test UPI ID: test@example";
   const configuredManual = await fetch(`${baseUrl}/api/contributions/manual/config`);
@@ -115,6 +114,43 @@ test("production server exposes health and static routes, and restricts API meth
     })
   });
   assert.equal(unauthenticatedReview.status, 401);
+
+  const authServer = http.createServer((request, response) => {
+    if (request.url !== "/auth/v1/user" || request.headers.authorization !== "Bearer test-access-token") {
+      response.writeHead(401, { "Content-Type": "application/json" });
+      response.end(JSON.stringify({ message: "Invalid token" }));
+      return;
+    }
+    response.writeHead(200, { "Content-Type": "application/json" });
+    response.end(JSON.stringify({
+      id: "00000000-0000-4000-8000-000000000001",
+      email: "donor@example.test",
+      app_metadata: { role: "donor" }
+    }));
+  });
+  authServer.listen(0, "127.0.0.1");
+  await once(authServer, "listening");
+  t.after(async () => {
+    await new Promise((resolve, reject) => {
+      authServer.close((error) => error ? reject(error) : resolve());
+    });
+  });
+  process.env.SUPABASE_URL = `http://127.0.0.1:${authServer.address().port}`;
+  const authenticatedSession = await fetch(`${baseUrl}/api/auth/session`, {
+    headers: { Authorization: "Bearer test-access-token" }
+  });
+  assert.equal(authenticatedSession.status, 200);
+  assert.deepEqual(await authenticatedSession.json(), {
+    user: {
+      id: "00000000-0000-4000-8000-000000000001",
+      email: "donor@example.test",
+      appRole: "donor"
+    }
+  });
+  const invalidSession = await fetch(`${baseUrl}/api/auth/session`, {
+    headers: { Authorization: "Bearer invalid-access-token" }
+  });
+  assert.equal(invalidSession.status, 401);
 
   const missingRoute = await fetch(`${baseUrl}/api/not-a-route`);
   assert.equal(missingRoute.status, 404);

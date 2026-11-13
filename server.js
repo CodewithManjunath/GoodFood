@@ -89,21 +89,28 @@ async function getServiceClient() {
 }
 
 async function getAuthenticatedUser(request) {
-  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_PUBLISHABLE_KEY || !process.env.SUPABASE_JWKS_URL) {
+  const url = process.env.SUPABASE_URL;
+  const publishableKey = process.env.SUPABASE_PUBLISHABLE_KEY;
+  if (!url || !publishableKey) {
     throw new HttpError(503, "Supabase server authentication is not configured.");
   }
-  const headers = new Headers();
-  for (const [name, value] of Object.entries(request.headers)) {
-    if (value) headers.set(name, Array.isArray(value) ? value.join(", ") : value);
-  }
-  const url = new URL(request.url, `http://${request.headers.host || "localhost"}`);
-  const apiRequest = new Request(url, { method: request.method, headers });
-  const { createSupabaseContext } = await import("@supabase/server");
-  const { data: context, error } = await createSupabaseContext(apiRequest, { auth: "user" });
-  if (error || !context?.userClaims?.id) {
+  const authorization = request.headers.authorization;
+  const tokenMatch = typeof authorization === "string"
+    ? /^Bearer\s+(\S+)$/i.exec(authorization)
+    : null;
+  if (!tokenMatch) {
     throw new HttpError(401, "A valid GoodFood sign-in is required.");
   }
-  return context.userClaims;
+
+  const { createClient } = await import("@supabase/supabase-js");
+  const client = createClient(url, publishableKey, {
+    auth: { autoRefreshToken: false, persistSession: false, detectSessionInUrl: false }
+  });
+  const { data, error } = await client.auth.getUser(tokenMatch[1]);
+  if (error || !data?.user?.id) {
+    throw new HttpError(401, "A valid GoodFood sign-in is required.");
+  }
+  return data.user;
 }
 
 function getManualContributionConfig() {
@@ -113,7 +120,6 @@ function getManualContributionConfig() {
       && instructions.length <= 2000
       && process.env.SUPABASE_URL
       && process.env.SUPABASE_PUBLISHABLE_KEY
-      && process.env.SUPABASE_JWKS_URL
       && process.env.SUPABASE_SERVICE_ROLE_KEY
   );
   return { enabled: isConfigured, instructions: isConfigured ? instructions : "" };

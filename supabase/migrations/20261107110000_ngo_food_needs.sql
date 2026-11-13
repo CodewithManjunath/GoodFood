@@ -294,6 +294,7 @@ create policy "Verified donors publish safe listings"
 
 revoke all on public.food_needs from anon, authenticated;
 grant select on public.food_needs to authenticated;
+grant insert (need_id) on public.donations to authenticated;
 
 revoke all on function public.create_goodfood_need(text, text, text, text, timestamptz) from public, anon;
 revoke all on function public.close_goodfood_need(uuid) from public, anon;

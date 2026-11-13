@@ -326,10 +326,7 @@ async function loadWorkspaceData() {
   }
 
   if (state.role === "admin") {
-    const membersResult = await supabase.from("profiles")
-      .select("id,display_name,role,country,city,is_verified,is_suspended,created_at")
-      .not("role", "is", null)
-      .order("created_at", { ascending: false });
+    const membersResult = await supabase.rpc("admin_goodfood_partner_details");
     if (membersResult.error) throw membersResult.error;
     state.members = membersResult.data;
   }
@@ -578,6 +575,7 @@ function dashboardStatsMarkup() {
 
 function discoverView() {
   const isDonor = state.role === "donor" || state.role === "individual";
+  const canPublishDonation = (isDonor || state.role === "admin") && state.profile?.is_verified;
   const available = state.donations.filter((item) =>
     !item.needId && item.status === "Available" && new Date(item.pickupEndsAt).getTime() > Date.now()
   );
@@ -592,14 +590,14 @@ function discoverView() {
       <div class="welcome-row">
         <div><div class="eyebrow">${isDonor ? "DONOR DASHBOARD" : "YOUR LOCAL FOOD NETWORK"}</div><h1>${ownGreeting}</h1>
           <p class="subtitle">${isDonor ? "Share your surplus with a community organization nearby." : "Find fresh, local donations ready to make a difference."}</p></div>
-        ${isDonor && state.profile?.is_verified ? `<button class="primary-button" id="add-donation"><span>＋</span> Donate food</button>` : ""}
+        ${canPublishDonation ? `<button class="primary-button" id="add-donation"><span>＋</span> Donate food</button>` : ""}
       </div>
       ${isDonor && !state.profile?.is_verified ? `<div class="confirm-box verification-notice"><strong>Account verification required.</strong> A platform administrator must verify this account before it can publish a food donation.</div>` : ""}
       ${state.role === "ngo" && !state.profile?.is_verified ? `<div class="confirm-box verification-notice"><strong>Account verification required.</strong> You can browse listings; an administrator must verify this organization before it can request food.</div>` : ""}
       ${dashboardStatsMarkup()}
       <div class="hero-card">
         <div class="hero-symbol">✳</div>
-        <div class="hero-copy"><strong>Good things happen when we share.</strong><p>Verified donors can post surplus food directly—no request needed to publish. NGOs can then request a handoff. Private pickup instructions are shared only after a donor confirms.</p></div>
+        <div class="hero-copy"><strong>Good things happen when we share.</strong><p>Verified donors and administrators with verified profiles can post surplus food directly—no request needed to publish. NGOs can then request a handoff. Private pickup instructions are shared only after a donor confirms.</p></div>
         <div class="hero-stat"><strong>${available.length}</strong><span>available listings</span></div>
       </div>
       <div class="section-heading"><div><h2>${isDonor ? "Community listings" : "Available near you"}</h2><p>${isDonor ? "See what other neighbors are sharing." : "Current food offers from verified donors"}</p></div><span class="result-count">${filtered.length} available</span></div>
@@ -661,13 +659,18 @@ function foodNeedsView() {
     const status = need.status === "open" && new Date(need.neededBy).getTime() <= now
       ? "Expired"
       : statusLabel(need.status);
+    const offerRows = offers.map((offer) => {
+      const expired = offer.status === "Available" && new Date(offer.pickupEndsAt).getTime() <= now;
+      const offerStatus = expired ? "Expired" : offer.status;
+      return `<div class="need-offer-row"><span><strong>${escapeHtml(offer.title)}</strong><small>${escapeHtml(offer.quantity)} · ${escapeHtml(offer.donor)} · ${escapeHtml(offerStatus)}</small></span>${state.foodNeedsAvailable && need.status === "open" && offer.status === "Available" && !expired ? `<button class="claim-button" data-need-claim="${escapeHtml(offer.id)}">Request pickup</button>` : ""}</div>`;
+    }).join("");
     return `<article class="need-card">
       <div class="need-card-header"><span class="food-tag">${escapeHtml(need.category)}</span><span class="status-pill">${escapeHtml(status)}</span></div>
       <h2>${escapeHtml(need.title)}</h2>
       <p class="need-org">${escapeHtml(need.ngoName)} · ${escapeHtml(need.city || need.country || "Community")}</p>
       <div class="card-meta"><span>▣ Needs ${escapeHtml(need.quantity)}</span><span>◷ By ${escapeHtml(new Date(need.neededBy).toLocaleString())}</span></div>
       <p class="need-description">${escapeHtml(need.description)}</p>
-      ${ownNeed ? `<div class="need-offers"><strong>Food offers (${offers.length})</strong>${offers.length ? offers.map((offer) => `<div class="need-offer-row"><span><strong>${escapeHtml(offer.title)}</strong><small>${escapeHtml(offer.quantity)} · ${escapeHtml(offer.donor)} · ${escapeHtml(offer.status)}</small></span>${state.foodNeedsAvailable && need.status === "open" && offer.status === "Available" ? `<button class="claim-button" data-need-claim="${escapeHtml(offer.id)}">Request pickup</button>` : ""}</div>`).join("") : `<p class="need-empty">No donors have offered food yet.</p>`}</div>
+      ${ownNeed ? `<div class="need-offers"><strong>Food offers (${offers.length})</strong>${offers.length ? offerRows : `<p class="need-empty">No donors have offered food yet.</p>`}</div>
         ${need.status === "open" ? `<button class="secondary-button close-need-button" data-close-need="${escapeHtml(need.id)}">Close request</button>` : ""}`
         : isDonor && state.foodNeedsAvailable && state.profile?.is_verified && need.status === "open"
           ? `<button class="primary-button need-offer-button" data-need-offer="${escapeHtml(need.id)}">Offer food for this need</button>`
@@ -826,6 +829,21 @@ function impactView() {
   document.getElementById("money-donation-form")?.addEventListener("submit", submitManualContribution);
 }
 
+function memberPrivateDetails(member) {
+  const rows = [
+    `Email: ${member.email || "Not available"}`,
+    `Phone: ${member.phone || "Not provided"}`,
+    member.state ? `State: ${member.state}` : ""
+  ];
+  if (member.role === "ngo") {
+    rows.push(
+      member.organization_address ? `Organization address: ${member.organization_address}` : "Organization address: Not provided",
+      member.registration_number ? `Registration/license: ${member.registration_number}` : "Registration/license: Not provided"
+    );
+  }
+  return rows.filter(Boolean).map(escapeHtml).join("<br>");
+}
+
 function adminView() {
   if (state.role !== "admin") {
     state.view = "discover";
@@ -834,12 +852,12 @@ function adminView() {
   root.innerHTML = `<div class="page-wrap"><div class="eyebrow">PLATFORM MANAGEMENT</div><h1>Admin console</h1><p class="subtitle">Review partner accounts and moderate food listings. Confirm verification using your organization’s documented checks before approving access.</p>
     <div class="stats-grid"><div class="stat-card"><span>Active listings</span><strong data-count-up="${state.donations.filter((item) => item.status === "Available").length}">${state.donations.filter((item) => item.status === "Available").length}</strong><small>Accepting requests</small></div><div class="stat-card"><span>Pending requests</span><strong data-count-up="${state.claims.filter((item) => item.status === "Requested").length}">${state.claims.filter((item) => item.status === "Requested").length}</strong><small>Awaiting donor decision</small></div><div class="stat-card"><span>Partners</span><strong data-count-up="${state.members.length}">${state.members.length}</strong><small>Registered accounts</small></div></div>
     <div class="section-heading"><div><h2>Partner verification</h2><p>Unverified accounts cannot publish or request food.</p></div></div>
-    <div class="activity-list">${state.members.length ? state.members.map((member) => `<div class="activity-row"><span class="activity-text"><strong>${escapeHtml(member.display_name)}</strong><small>${escapeHtml(roles[member.role] || member.role)} · ${escapeHtml(member.city)}, ${escapeHtml(member.country)}${member.is_suspended ? " · Suspended" : ""}</small></span><span class="status-pill">${member.is_verified ? "Verified" : "Pending review"}</span><button class="table-action" data-review-profile="${escapeHtml(member.id)}" data-verified="${member.is_verified}" data-suspended="${member.is_suspended}">${member.is_verified ? "Revoke verification" : "Verify"}</button><button class="table-action" data-suspend-profile="${escapeHtml(member.id)}" data-suspended="${member.is_suspended}">${member.is_suspended ? "Restore" : "Suspend"}</button></div>`).join("") : `<div class="empty-state"><strong>No partner accounts yet</strong></div>`}</div>
+    <div class="activity-list">${state.members.length ? state.members.map((member) => `<div class="activity-row"><span class="activity-text"><strong>${escapeHtml(member.display_name)}</strong><small>${escapeHtml(roles[member.role] || member.role)} · ${escapeHtml(member.city)}, ${escapeHtml(member.state)}, ${escapeHtml(member.country)}${member.is_suspended ? " · Suspended" : ""}<br>${memberPrivateDetails(member)}</small></span><span class="status-pill">${member.is_verified ? "Verified" : "Pending review"}</span><button class="table-action" data-review-profile="${escapeHtml(member.id)}" data-verified="${member.is_verified}" data-suspended="${member.is_suspended}">${member.is_verified ? "Revoke verification" : "Verify"}</button><button class="table-action" data-suspend-profile="${escapeHtml(member.id)}" data-suspended="${member.is_suspended}">${member.is_suspended ? "Restore" : "Suspend"}</button></div>`).join("") : `<div class="empty-state"><strong>No partner accounts yet</strong></div>`}</div>
     <div class="section-heading"><div><h2>Donation listings</h2><p>Remove unsafe, expired, or inappropriate offers.</p></div></div>
     <div class="activity-list">${state.donations.length ? state.donations.map((item) => `<div class="activity-row"><span class="activity-text"><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(item.donor)} · ${escapeHtml(item.city)} · ${escapeHtml(item.quantity)} · ${escapeHtml(item.status)}</small></span>${item.status !== "Withdrawn" && item.status !== "Collected" ? `<button class="table-action" data-admin-remove="${escapeHtml(item.id)}">Remove listing</button>` : `<span class="status-pill">${escapeHtml(item.status)}</span>`}</div>`).join("") : `<div class="empty-state"><strong>No listings to review</strong></div>`}</div>
     <div class="section-heading"><div><h2>Manual money contributions</h2><p>Compare submitted amounts and references with the official bank statement before deciding. Never mark paid based only on the donor’s submission.</p></div></div>
     <div class="activity-list">${state.moneyDonations.length ? state.moneyDonations.map((item) => `<div class="activity-row"><span class="activity-text"><strong>${escapeHtml(formatRupees(item.amountPaise))} · ${escapeHtml(item.donorName || "GoodFood member")}</strong><small>Submitted ${escapeHtml(new Date(item.createdAt).toLocaleString())} · Donor reference: ${escapeHtml(item.donorReference)}${item.receiptPath ? "<br>Private receipt image attached" : ""}${item.reviewNote ? `<br>Review note: ${escapeHtml(item.reviewNote)}` : ""}${item.verifiedReference ? `<br>Bank statement reference: ${escapeHtml(item.verifiedReference)}` : ""}${item.verifiedAmountPaise !== null && item.verifiedAmountPaise !== undefined ? `<br>Bank statement amount: ${escapeHtml(formatRupees(item.verifiedAmountPaise))}` : ""}</small></span>${item.rawStatus === "submitted" ? `<button class="table-action" data-review-contribution="${escapeHtml(item.id)}">Review</button>` : `<span class="status-pill">${escapeHtml(item.status)}</span>`}${item.receiptPath ? `<button class="table-action" data-view-receipt="${escapeHtml(item.id)}">View receipt</button>` : ""}</div>`).join("") : `<div class="empty-state"><strong>No contributions submitted</strong></div>`}</div>
-    <p class="privacy-note">Admin access requires Supabase app metadata set by the project owner. Profile emails and private pickup instructions are not included in this review screen.</p></div>`;
+    <p class="privacy-note">Private contact details are available only to the account holder and authorized platform administrators. Admin access requires Supabase app metadata set by the project owner.</p></div>`;
   root.querySelectorAll("[data-review-profile]").forEach((button) => {
     button.addEventListener("click", () => reviewMember(
       button.dataset.reviewProfile,
@@ -941,6 +959,64 @@ function closeModal() {
   document.getElementById("modal-backdrop").classList.add("hidden");
 }
 
+async function openPrivateProfile() {
+  if (!supabase || !state.user) return;
+  showModal(`<div class="eyebrow">PRIVATE ACCOUNT</div><h2 id="modal-title">Your contact details</h2><p id="private-profile-loading" class="modal-intro">Loading your private profile…</p>`);
+  try {
+    const { data, error } = await supabase.rpc("get_my_goodfood_private_details");
+    if (error) throw error;
+    if (!document.getElementById("private-profile-loading")) return;
+    const details = data?.[0] || {};
+    const isNGO = state.profile?.role === "ngo";
+    showModal(`<div class="eyebrow">PRIVATE ACCOUNT</div><h2 id="modal-title">Your contact details</h2>
+      <p class="modal-intro">Only you and authorized Goodfood administrators can view these details. Email is taken from your signed-in account.</p>
+      <form id="private-profile-form">
+        <div class="form-field"><label for="private-email">Contact email</label><input id="private-email" type="email" value="${escapeHtml(state.user.email || "")}" readonly /></div>
+        <div class="form-grid">
+          <div class="form-field"><label for="private-phone">Phone number (optional)</label><input id="private-phone" name="phone" type="tel" autocomplete="tel" maxlength="30" value="${escapeHtml(details.phone)}" /></div>
+          <div class="form-field"><label for="private-state">State / province (optional)</label><input id="private-state" name="state" autocomplete="address-level1" maxlength="100" value="${escapeHtml(details.state)}" /></div>
+        </div>
+        ${isNGO ? `<div class="form-field"><label for="private-address">Organization address (optional)</label><textarea id="private-address" name="organizationAddress" autocomplete="street-address" maxlength="300">${escapeHtml(details.organization_address)}</textarea></div>
+          <div class="form-field"><label for="private-registration">Registration / license number (optional)</label><input id="private-registration" name="registrationNumber" maxlength="120" value="${escapeHtml(details.registration_number)}" /></div>` : ""}
+        <div class="modal-actions"><button class="secondary-button" id="cancel-private-profile" type="button">Cancel</button><button class="primary-button" id="save-private-profile" type="submit">Save details</button></div>
+      </form>`);
+    document.getElementById("cancel-private-profile").addEventListener("click", closeModal);
+    document.getElementById("private-profile-form").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const form = new FormData(event.currentTarget);
+      const button = document.getElementById("save-private-profile");
+      button.disabled = true;
+      try {
+        const { error: saveError } = await supabase.rpc("save_my_goodfood_private_details", {
+          private_state: String(form.get("state") || "").trim(),
+          private_phone: String(form.get("phone") || "").trim(),
+          private_organization_address: String(form.get("organizationAddress") || "").trim(),
+          private_registration_number: String(form.get("registrationNumber") || "").trim()
+        });
+        if (saveError) throw saveError;
+        const member = state.members.find((item) => item.id === state.user.id);
+        if (member) {
+          member.state = String(form.get("state") || "").trim();
+          member.phone = String(form.get("phone") || "").trim();
+          member.organization_address = String(form.get("organizationAddress") || "").trim();
+          member.registration_number = String(form.get("registrationNumber") || "").trim();
+        }
+        closeModal();
+        if (state.view === "admin") render();
+        setToast("Private contact details saved.");
+      } catch (saveError) {
+        console.error("Could not save private account details.", saveError);
+        setToast(saveError.message || "Could not save private account details.", true);
+        button.disabled = false;
+      }
+    });
+  } catch (error) {
+    console.error("Could not load private account details.", error);
+    if (document.getElementById("private-profile-loading")) closeModal();
+    setToast(error.message || "Could not load private account details.", true);
+  }
+}
+
 function openClaim(id) {
   const item = state.donations.find((donation) => donation.id === id);
   if (!item || state.role !== "ngo" || !state.profile?.is_verified) return;
@@ -971,8 +1047,10 @@ function openClaim(id) {
 }
 
 function openDonationForm(needId = null) {
-  if (!state.profile?.is_verified || !["donor", "individual"].includes(state.role)) {
-    setToast("A verified donor account is required to publish food listings.", true);
+  const canPublishDonation = ["donor", "individual", "admin"].includes(state.role)
+    && state.profile?.is_verified;
+  if (!canPublishDonation) {
+    setToast("A verified donor or administrator account is required to publish food listings.", true);
     return;
   }
   const need = needId ? state.needs.find((item) => item.id === needId && item.status === "open") : null;
@@ -1165,7 +1243,7 @@ document.getElementById("modal-backdrop").addEventListener("click", (event) => {
   if (event.target.id === "modal-backdrop") closeModal();
 });
 document.getElementById("privacy-link").addEventListener("click", () => {
-  showModal(`<div class="eyebrow">PRIVACY BY DESIGN</div><h2 id="modal-title">Connect without oversharing.</h2><p class="modal-intro">Only a public display name, account type, and city are shown to signed-in members. Email addresses and exact pickup details are never exposed in public listings.</p><div class="confirm-box"><strong>1.</strong> Browse available donations or open NGO food needs.<br><strong>2.</strong> Verified NGOs can request listed food or post a need for donors.<br><strong>3.</strong> Donors share exact pickup instructions only after confirming a request.</div><p class="modal-intro">Goodfood uses Supabase for sign-in and shared, policy-protected community data.</p><div class="modal-actions"><button class="primary-button" id="cancel-modal">Got it</button></div>`);
+  showModal(`<div class="eyebrow">PRIVACY BY DESIGN</div><h2 id="modal-title">Connect without oversharing.</h2><p class="modal-intro">Signed-in members see limited listing details such as display name, account type, and city. Email, phone, state, NGO address, registration details, and exact pickup instructions are never shown on public listings. Private contact details are available to the account holder and authorized administrators.</p><div class="confirm-box"><strong>1.</strong> Browse available donations or open NGO food needs.<br><strong>2.</strong> Verified NGOs can request listed food or post a need for donors.<br><strong>3.</strong> Donors share exact pickup instructions only after confirming a request.</div><p class="modal-intro">Goodfood uses Supabase for sign-in and shared, policy-protected community data.</p><div class="modal-actions"><button class="primary-button" id="cancel-modal">Got it</button></div>`);
   document.getElementById("cancel-modal").addEventListener("click", closeModal);
 });
 document.getElementById("help-button").addEventListener("click", () => {
@@ -1173,10 +1251,10 @@ document.getElementById("help-button").addEventListener("click", () => {
   document.getElementById("cancel-modal").addEventListener("click", closeModal);
 });
 document.getElementById("profile-button").addEventListener("click", () => {
-  setToast(`${accountName()} · ${state.profile?.city || ""}, ${state.profile?.country || ""}`);
+  openPrivateProfile();
 });
 document.getElementById("topbar-profile").addEventListener("click", () => {
-  setToast(`${accountName()} · ${state.profile?.city || ""}, ${state.profile?.country || ""}`);
+  openPrivateProfile();
 });
 
 function setAuthMode(mode) {
